@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from . models import Posts
+from . models import GitlabGroup
 
-class PostSerializer(serializers.ModelSerializer):
+
+class GitlabGroupSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Posts
+        model = GitlabGroup
         fields = '__all__'

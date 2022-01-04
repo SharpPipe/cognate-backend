@@ -1,13 +1,14 @@
 from django.shortcuts import render
 from rest_framework.response import Response
 from rest_framework import generics
-from . models import Posts
-from . serializers import PostSerializer
+from . models import GitlabGroup
+from . serializers import GitlabGroupSerializer
 
-class PostsView(generics.RetrieveAPIView):
-    queryset = Posts.objects.all()
+
+class GitlabGroupsView(generics.RetrieveAPIView):
+    queryset = GitlabGroup.objects.all()
 
     def get(self, request):
         queryset = self.get_queryset()
-        serializer = PostSerializer(queryset, many=True)
+        serializer = GitlabGroupSerializer(queryset, many=True)
         return Response(serializer.data)

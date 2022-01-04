@@ -1,6 +1,6 @@
 from django.urls import path
-from . views import PostsView
+from . views import GitlabGroupsView
 
 urlpatterns = [
-    path('posts/', PostsView.as_view(), name='posts_view')
+    path('groups/', GitlabGroupsView.as_view(), name='gitlab-groups-view')
 ]

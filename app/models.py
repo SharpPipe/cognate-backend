@@ -1,8 +1,11 @@
 from django.db import models
 
-class Posts(models.Model):
-    title = models.CharField(max_length=50)
-    content = models.TextField()
+
+class GitlabGroup(models.Model):
+    group_name = models.CharField(max_length=50)
+    description = models.TextField()
+    gitlab_id = models.IntegerField()
+    hidden = models.BooleanField(default=False)
 
     def __str__(self):
-        return self.title
+        return self.group_name
