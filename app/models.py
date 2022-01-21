@@ -7,11 +7,11 @@ class User(models.Model):
 
 
 class ProjectGroup(models.Model):
-    project_group = models.ForeignKey('self', on_delete=models.SET_NULL)
+    project_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True)
 
 
 class Project(models.Model):
-    project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL)
+    project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL, null=True)
 
 
 class Repository(models.Model):
@@ -21,9 +21,9 @@ class Repository(models.Model):
 
 class UserProject(models.Model):
     class Rights(models.TextChoices):
-        ADMIN = "A", _("Admin")
-        OWNER = "O", _("Owner")
-        VIEWER = "V", _("Viewer")
+        ADMIN = ("A", "Admin")
+        OWNER = ("O", "Owner")
+        VIEWER = ("V", "Viewer")
 
     rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -31,14 +31,14 @@ class UserProject(models.Model):
 
 
 class GradeCategory(models.Model):
-    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL)
+    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True)
 
 
 class GradeComponent(models.Model):
     total = models.IntegerField()
     # TODO: Add type enum?
     description = models.TextField()
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL)
+    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True)
 
 
 class GradeMilestone(models.Model):
@@ -48,7 +48,7 @@ class GradeMilestone(models.Model):
 
 
 class Milestone(models.Model):
-    grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.SET_NULL)
+    grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.SET_NULL, null=True)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE)
 
 
@@ -81,7 +81,7 @@ class Commit(models.Model):
 
 
 class GradeCalculation(models.Model):
-    grade_category = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL)
+    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE)
 
 
