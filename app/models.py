@@ -7,7 +7,14 @@ class User(models.Model):
 
 
 class ProjectGroup(models.Model):
-    project_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True)
+    class ChildrenType(models.TextChoices):
+        GROUPS = ("G", "Groups")
+        PROJECTS = ("P", "Projects")
+
+    children_type = models.CharField(max_length=1, choices=ChildrenType.choices, default=ChildrenType.PROJECTS)
+    name = models.CharField(max_length=50)
+    description = models.TextField()
+    parent_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True)
 
 
 class Project(models.Model):
@@ -28,6 +35,17 @@ class UserProject(models.Model):
     rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
+
+
+class UserProjectGroup(models.Model):
+    class Rights(models.TextChoices):
+        ADMIN = ("A", "Admin")
+        OWNER = ("O", "Owner")
+        VIEWER = ("V", "Viewer")
+
+    rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE)
 
 
 class GradeCategory(models.Model):
