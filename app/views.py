@@ -1,3 +1,9 @@
-from django.shortcuts import render
-from rest_framework.response import Response
-from rest_framework import generics
+from rest_framework import viewsets
+
+from .models import ProjectGroup
+from .serializers import ProjectGroupSerializer
+
+
+class ProjectGroupViewSet(viewsets.ModelViewSet):
+    queryset = ProjectGroup.objects.all()
+    serializer_class = ProjectGroupSerializer
