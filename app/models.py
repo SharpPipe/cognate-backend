@@ -4,7 +4,7 @@ from django.db import models
 class Committer(models.Model):
     uni_id = models.CharField(max_length=50)
     email = models.CharField(max_length=100)
-    account = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True)
+    account = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class ProjectGroup(models.Model):
@@ -15,11 +15,11 @@ class ProjectGroup(models.Model):
     children_type = models.CharField(max_length=1, choices=ChildrenType.choices, default=ChildrenType.PROJECTS)
     name = models.CharField(max_length=50)
     description = models.TextField()
-    parent_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True)
+    parent_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class Project(models.Model):
-    project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL, null=True)
+    project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class Repository(models.Model):
@@ -46,18 +46,18 @@ class UserProjectGroup(models.Model):
 
     rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
-    project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE)
+    project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE, related_name='user_project_groups')
 
 
 class GradeCategory(models.Model):
-    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True)
+    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class GradeComponent(models.Model):
     total = models.IntegerField()
     # TODO: Add type enum?
     description = models.TextField()
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True)
+    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class GradeMilestone(models.Model):
@@ -67,7 +67,7 @@ class GradeMilestone(models.Model):
 
 
 class Milestone(models.Model):
-    grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.SET_NULL, null=True)
+    grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.SET_NULL, null=True, blank=True)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE)
 
 
@@ -100,7 +100,7 @@ class Commit(models.Model):
 
 
 class GradeCalculation(models.Model):
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True)
+    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE)
 
 
