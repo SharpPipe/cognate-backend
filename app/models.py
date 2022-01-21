@@ -31,13 +31,20 @@ class UserProject(models.Model):
 
 
 class GradeCategory(models.Model):
-    pass
+    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL)
+
+
+class GradeComponent(models.Model):
+    total = models.IntegerField()
+    # TODO: Add type enum?
+    description = models.TextField()
+    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL)
 
 
 class GradeMilestone(models.Model):
     start = models.DateTimeField()
     end = models.DateTimeField()
-    grade_category = models.ForeignKey(GradeCategory, on_delete=)
+    grade_component = models.ForeignKey(GradeComponent, on_delete=models.CASCADE)
 
 
 class Milestone(models.Model):
@@ -74,4 +81,14 @@ class Commit(models.Model):
 
 
 class GradeCalculation(models.Model):
+    grade_category = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE)
+
+
+class UserGrade(models.Model):
+    amount = models.IntegerField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    grade_component = models.ForeignKey(GradeComponent, on_delete=models.CASCADE)
+
+
+
