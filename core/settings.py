@@ -41,9 +41,10 @@ INSTALLED_APPS = [
     'corsheaders',
     'core',
     'app',
+    'account',
 
     'rest_framework',
-    'rest_registration'
+    'rest_framework_simplejwt'
 ]
 
 MIDDLEWARE = [
@@ -142,9 +143,8 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
-REST_REGISTRATION = {
-    'REGISTER_VERIFICATION_ENABLED': False,
-    'REGISTER_EMAIL_VERIFICATION_ENABLED': False,
-    'RESET_PASSWORD_VERIFICATION_ENABLED': False,
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    )
 }
