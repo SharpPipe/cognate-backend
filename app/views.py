@@ -19,6 +19,18 @@ class ProjectGroupView(views.APIView):
         return JsonResponse({})
 
 
+class ProjectGroupLoadProjectsView(views.APIView):
+    def get(self, request, id):
+        print(f"Getting projects for project group {id}")
+        group = ProjectGroup.objects.filter(pk=id).first()
+        print(f"Project group is {group} with gitlab group id {group.group_id}")
+        profile = Profile.objects.filter(user=request.user).first()
+        print(f"User's provided auth token is {profile.gitlab_token}")
+
+        
+        return JsonResponse({})
+
+
 class ProfileView(views.APIView):
     def put(self, request):
         profile = Profile.objects.filter(user=request.user).first()
