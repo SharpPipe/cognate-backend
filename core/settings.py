@@ -42,7 +42,8 @@ INSTALLED_APPS = [
     'core',
     'app',
 
-    'rest_framework'
+    'rest_framework',
+    'rest_registration'
 ]
 
 MIDDLEWARE = [
@@ -61,6 +62,7 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = (
     'http://localhost:8080',
     'http://127.0.0.1:8080',
+    'http://35.228.100.147:8080'
 )
 
 ROOT_URLCONF = 'core.urls'
@@ -139,3 +141,10 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+REST_REGISTRATION = {
+    'REGISTER_VERIFICATION_ENABLED': False,
+    'REGISTER_EMAIL_VERIFICATION_ENABLED': False,
+    'RESET_PASSWORD_VERIFICATION_ENABLED': False,
+}
