@@ -27,7 +27,6 @@ class ProjectGroupLoadProjectsView(views.APIView):
         profile = Profile.objects.filter(user=request.user).first()
         print(f"User's provided auth token is {profile.gitlab_token}")
 
-        
         return JsonResponse({})
 
 
