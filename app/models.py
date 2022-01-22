@@ -15,6 +15,7 @@ class ProjectGroup(models.Model):
     children_type = models.CharField(max_length=1, choices=ChildrenType.choices, default=ChildrenType.PROJECTS)
     name = models.CharField(max_length=50)
     description = models.TextField()
+    group_id = models.IntegerField(null=True, blank=True)
     parent_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
 
 
