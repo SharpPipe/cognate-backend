@@ -2,7 +2,7 @@
 
 _Gitlab project aggregator for evaluating team projects_
 
-For more information fisit our [wiki](https://gorane7.gitlab.io/gitlab-hub-wiki/)
+For more information fisit our [wiki](https://cognate.pages.taltech.ee/wiki/)
 
 ## Docker
 - **run app**
