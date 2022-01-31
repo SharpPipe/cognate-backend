@@ -2,7 +2,7 @@ services:
   django:
     build: .
     container_name: django
-    image: gitlab-hub/backend
+    image: cognate/back
     command: python3 manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/usr/src/app
