@@ -1,15 +1,10 @@
-image:
-  name: docker/compose:latest
+image: docker
 services:
   - docker:dind
 
-variables:
-  DOCKER_HOST: tcp://docker:2375/
-  DOCKER_DRIVER: overlay2
-
 stages:
   - test
-  - build
+  - deploy
 
 test:
   tags:
@@ -18,20 +13,21 @@ test:
   script:
     - echo "no tests written yet :<"
 
-docker build:
+deploy:
   tags:
     - cognate
-  stage: build
+  stage: deploy
   only:
     refs:
       - main
   before_script:
-    - docker info
-    - docker version
+    - sudo apt-get install -y python-pip
+    - pip install docker-compose
     - docker-compose version
   script:
     - echo "Building Docker and Postgre"
     - docker-compose down
-    - docker-compose build
-    - docker-compose up cognate/back
+    - docker-compose up -d --build
+  environment: main
+  when: manual
 
