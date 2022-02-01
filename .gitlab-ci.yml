@@ -11,7 +11,7 @@ test:
     - cognate
   stage: test
   script:
-    - echo "no tests written yet :<"
+    - echo "no tests written yet :("
 
 deploy:
   tags:
