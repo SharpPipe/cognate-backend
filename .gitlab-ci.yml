@@ -1,0 +1,37 @@
+image:
+  name: docker/compose:latest
+services:
+  - docker:dind
+
+variables:
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_DRIVER: overlay2
+
+stages:
+  - test
+  - build
+
+test:
+  tags:
+    - cognate
+  stage: test
+  script:
+    - echo "no tests written yet :<"
+
+docker build:
+  tags:
+    - cognate
+  stage: build
+  only:
+    refs:
+      - main
+  before_script:
+    - docker info
+    - docker version
+    - docker-compose version
+  script:
+    - echo "Building Docker and Postgre"
+    - docker-compose down
+    - docker-compose build
+    - docker-compose up cognate/back
+
