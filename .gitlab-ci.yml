@@ -21,8 +21,8 @@ deploy:
   #  refs:
   #    - main
   before_script:
-    - sudo apt-get install -y python3-pip
-    - pip install docker-compose
+    #- sudo apt-get install -y python3-pip
+    #- pip install docker-compose
     - docker-compose version
   script:
     - echo "Building Docker and Postgre"
