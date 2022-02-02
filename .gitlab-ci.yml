@@ -17,9 +17,9 @@ deploy:
   tags:
     - cognate
   stage: deploy
-  only:
-    refs:
-      - main
+  #only:
+  #  refs:
+  #    - main
   before_script:
     - sudo apt-get install -y python-pip
     - pip install docker-compose
