@@ -25,7 +25,12 @@ SECRET_KEY = 'django-insecure-78yakj84ak&)td2282f!718w1!0^_w(^^v=l+4!8sxmzif)zro
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [
+    'localhost',
+    '0.0.0.0',
+    '127.0.0.1',
+    '193.40.156.179',
+]
 
 
 # Application definition
@@ -62,7 +67,8 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = (
     'http://localhost:8080',
     'http://127.0.0.1:8080',
-    'http://35.228.100.147:8080'
+    'http://35.228.100.147:8080', # Kristjan's server
+    'http://193.40.156.179:8080', # Taltech server
 )
 
 ROOT_URLCONF = 'core.urls'
