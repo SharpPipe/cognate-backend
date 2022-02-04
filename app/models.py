@@ -1,6 +1,11 @@
 from django.db import models
 
 
+class Profile(models.Model):
+    user = models.OneToOneField('auth.User', on_delete=models.CASCADE)
+    gitlab_token = models.CharField(max_length=1000, null=True, blank=True)
+
+
 class Committer(models.Model):
     uni_id = models.CharField(max_length=50)
     email = models.CharField(max_length=100)
@@ -20,11 +25,14 @@ class ProjectGroup(models.Model):
 
 
 class Project(models.Model):
+    name = models.CharField(max_length=255, null=True, blank=True)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class Repository(models.Model):
     url = models.CharField(max_length=100)
+    gitlab_id = models.IntegerField(null=True, blank=True)
+    name = models.CharField(max_length=255, null=True, blank=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
 
 

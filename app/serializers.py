@@ -1,6 +1,7 @@
 from rest_framework import serializers
+from django.contrib.auth.models import User
 
-from .models import ProjectGroup
+from .models import ProjectGroup, Profile, Project, Repository
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -9,7 +10,40 @@ class ProjectGroupSerializer(serializers.ModelSerializer):
         fields = ['id', 'children_type', 'name', 'description', 'group_id']
 
     def create(self, validated_data):
-        print("CREATING")
         return ProjectGroup.objects.create(**validated_data)
 
 
+class ProjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ['id', 'name', 'project_group']
+
+
+class RepositorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Repository
+        fields = ['id', 'url', 'gitlab_id', 'name', 'project']
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Profile
+        fields = ['id', 'user_id', 'gitlab_token']
+        read_only_fields = ['user_id']
+
+
+class RegisterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'username', 'password', 'first_name', 'last_name', 'email')
+        extra_kwargs = {'password': {'write_only': True}}
+
+    def create(self, validated_data):
+        user = User.objects.create_user(validated_data['username'], password=validated_data['password'], first_name=validated_data['first_name'], last_name=validated_data['last_name'], email=validated_data['email'])
+        return user
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = '__all__'
