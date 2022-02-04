@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
-from .models import ProjectGroup, Profile
+from .models import ProjectGroup, Profile, Project, Repository
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -11,6 +11,18 @@ class ProjectGroupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         return ProjectGroup.objects.create(**validated_data)
+
+
+class ProjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ['id', 'name', 'project_group']
+
+
+class RepositorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Repository
+        fields = ['id', 'url', 'gitlab_id', 'name', 'project']
 
 
 class ProfileSerializer(serializers.ModelSerializer):

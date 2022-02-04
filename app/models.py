@@ -25,11 +25,14 @@ class ProjectGroup(models.Model):
 
 
 class Project(models.Model):
+    name = models.CharField(max_length=255, null=True, blank=True)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class Repository(models.Model):
     url = models.CharField(max_length=100)
+    gitlab_id = models.IntegerField(null=True, blank=True)
+    name = models.CharField(max_length=255, null=True, blank=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
 
 
