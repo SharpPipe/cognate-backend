@@ -40,7 +40,13 @@ class ProjectGroupLoadProjectsView(views.APIView):
         print(f"Got response")
 
         json = answer.json()
+        if not isinstance(json, list):
+            error = f"Something went wrong, expected 'json' variable to be a list, but was {type(json)} instead.\n"
+            error += f"'json' value: {json}"
+            print(error)
+            return JsonResponse({"error": error})
         data = []
+        print(json)
         for project in json:
             data.append({
                 "name": project["name"],
@@ -51,7 +57,6 @@ class ProjectGroupLoadProjectsView(views.APIView):
             Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
 
         return JsonResponse({"data": data})
-        # return JsonResponse({})
 
 
 class ProjectsView(views.APIView):
