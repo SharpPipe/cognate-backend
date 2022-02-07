@@ -24,7 +24,7 @@ deploy:
     - docker-compose version
   script:
     - echo "Building Docker and Postgre"
-    - docker-compose down
+    - docker-compose stop
     - docker-compose up -d --build
   environment: main
 
