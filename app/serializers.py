@@ -32,15 +32,24 @@ class ProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ['user_id']
 
 
-class RegisterSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ('id', 'username', 'password', 'first_name', 'last_name', 'email')
-        extra_kwargs = {'password': {'write_only': True}}
+class RegisterSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    username = serializers.CharField()
+    first_name = serializers.CharField(required=False)
+    last_name = serializers.CharField(required=False)
+    password = serializers.CharField()
+    password_confirm = serializers.CharField()
 
     def create(self, validated_data):
         user = User.objects.create_user(validated_data['username'], password=validated_data['password'], first_name=validated_data['first_name'], last_name=validated_data['last_name'], email=validated_data['email'])
         return user
+
+    def validate(self, data):
+        if not data.get('password') or not data.get('password_confirm'):
+            raise serializers.ValidationError("Please enter a password and confirm it.")
+        if data.get('password') != data.get('password_confirm'):
+            raise serializers.ValidationError("Those passwords don't match.")
+        return data
 
 
 class UserSerializer(serializers.ModelSerializer):
