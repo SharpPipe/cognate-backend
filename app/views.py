@@ -13,6 +13,27 @@ from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySe
     RegisterSerializer, GradeCategorySerializerWithGrades
 
 
+def get_members_from_repo(repo, user):
+    base_url = "https://gitlab.cs.ttu.ee"
+    api_part = "/api/v4"
+    endpoint_part = f"/projects/{repo.gitlab_id}/members/all"
+    token_part = f"?private_token={user.profile.gitlab_token}"
+
+    answer = requests.get(base_url + api_part + endpoint_part + token_part)
+    return answer.json()
+
+
+def add_user_grade_recursive(user_project, category):
+    UserGrade.objects.create(amount=0, user_project=user_project, grade_component=category)
+    for child in category.children.all():
+        add_user_grade_recursive(user_project, child)
+
+
+def add_user_grade(user_project, project_group):
+    root_category = project_group.grade_calculation.grade_category
+    add_user_grade_recursive(user_project, root_category)
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
@@ -24,7 +45,7 @@ class ProjectGroupView(views.APIView):
         if serializer.is_valid():
             project_group = serializer.save()
             UserProjectGroup.objects.create(rights="O", account=request.user, project_group=project_group)
-            grade_category = GradeCategory.objects.create(name="root")
+            grade_category = GradeCategory.objects.create(name="root", grade_type="S")
             grade_calculation = GradeCalculation.objects.create(grade_category=grade_category, project_group=project_group)
         return JsonResponse({})
 
@@ -61,7 +82,11 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 "url": project["web_url"]
             })
             project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
-            Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
+            repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
+            members = [member["username"] for member in get_members_from_repo(repo, request.user)]
+            for user in User.objects.filter(username__in=members).all():
+                user_project = UserProject.objects.create(rights="M", account=user, project=project_object)
+                add_user_grade(user_project, group)
 
         return JsonResponse({"data": data})
 
@@ -108,7 +133,10 @@ class GradeCategoryView(views.APIView):
             grade_category = serializer.save()
             grade_category.parent_category = parent
             grade_category.save()
-            if "start" in request.data.keys() and "end" in request.data.keys():
+            for project in project_group.project_set.all():
+                for user_project in project.userproject_set.all():
+                    add_user_grade_recursive(user_project, grade_category)
+            if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
                 grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
             return JsonResponse(GradeCategorySerializer(grade_category).data)
         return JsonResponse({4: 18})
@@ -157,10 +185,10 @@ class ProjectGradesView(views.APIView):
         root_category = project_group.grade_calculation.grade_category
         print(root_category)
 
-        users = [user_project.account.id for user_project in UserProject.objects.filter(project=project).all()]
+        users = [user_project.id for user_project in UserProject.objects.filter(project=project).all()]
         print(users)
 
-        return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"users": users}).data)
+        return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
 
 
 class RootAddUsers(views.APIView):
@@ -191,25 +219,18 @@ class RootAddUsers(views.APIView):
 
         project_group = ProjectGroup.objects.filter(pk=id).first()
         projects = Project.objects.filter(project_group=project_group)
+        grade_category_root = project_group.grade_calculation.grade_category
         for project in projects:
             users_found = []
             for repo in project.repository_set.all():
-                repo_data = RepositorySerializer(repo).data
-
-                base_url = "https://gitlab.cs.ttu.ee"
-                api_part = "/api/v4"
-                endpoint_part = f"/projects/{repo_data['gitlab_id']}/members/all"
-                token_part = f"?private_token={request.user.profile.gitlab_token}"
-
-                answer = requests.get(base_url + api_part + endpoint_part + token_part)
-                answer_json = answer.json()
-
+                answer_json = get_members_from_repo(repo, request.user)
                 for member in answer_json:
                     for user in user_objects:
                         if user.username in users_found:
                             continue
                         if member["username"] == user.username:
-                            UserProject.objects.create(rights="M", account=user, project=project)
+                            user_project = UserProject.objects.create(rights="M", account=user, project=project)
+                            add_user_grade_recursive(user_project, grade_category_root)
                             users_found.append(user.username)
                             print(f"{member['username']} found in project {project.name}")
         return JsonResponse({200: "OK"})
@@ -227,4 +248,44 @@ class GradeUserView(views.APIView):
         user = User.objects.filter(pk=user_id).first()
         grade = GradeCategory.objects.filter(pk=grade_id).first()
         user_grade = UserGrade.objects.create(amount=request.data["amount"], account=user, grade_component=grade)
+
+        parent = grade.parent_category
+        while parent is not None:
+            modify = False
+            if parent.grade_type == "S":
+                func = sum
+                modify = True
+            elif parent.grade_type == "M":
+                func = max
+                modify = True
+            elif parent.grade_type == "I":
+                func = min
+                modify = True
+
+            if modify:
+                children = parent.children
+                children_total_potential = func([c.total for c in children])
+                children_total_value = func([UserGrade.objects.filter(account=user).filter(grade_component=c).first().amount for c in children])
+                parent_grade = UserGrade.objects.filter(account=user).filter(grade_component=parent).first()
+                parent_grade.amount = parent.total * children_total_value / children_total_potential
+                parent_grade.save()
+
+            grade = parent
+            parent = grade.parent_category
         return JsonResponse({200: "OK"})
+
+
+class RepositoryUpdateView(views.APIView):
+    def get(self, request, id):
+        # TODO: add validation
+        repo = Repository.objects.filter(pk=id).first()
+        base_url = "https://gitlab.cs.ttu.ee"
+        api_part = "/api/v4"
+
+
+        endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
+        token_part = f"?private_token={request.user.profile.gitlab_token}"
+        answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+        print(answer)
+
+        return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
-from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeMilestone, UserGrade
+from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeMilestone, UserGrade, UserProject
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -59,12 +59,20 @@ class AccountUsernameSerializer(serializers.ModelSerializer):
         fields = ['id', 'username']
 
 
-class UserGradeSerializer(serializers.ModelSerializer):
+class UserProjectSerializer(serializers.ModelSerializer):
     account = AccountUsernameSerializer()
 
     class Meta:
+        model = UserProject
+        fields = ['id', 'account']
+
+
+class UserGradeSerializer(serializers.ModelSerializer):
+    user_project = UserProjectSerializer()
+
+    class Meta:
         model = UserGrade
-        fields = ['amount', 'account']
+        fields = ['amount', 'user_project']
         # list_serializer_class = IsActiveListSerializer
 
 
@@ -73,7 +81,7 @@ class UserGradeListSerializer(serializers.ListSerializer):
     child = UserGradeSerializer()
 
     def to_representation(self, data):
-        data = data.filter(account__in=self.child.context['users'])
+        data = data.filter(user_project__in=self.child.context['user_projects'])
         return super(UserGradeListSerializer, self).to_representation(data)
 
 
