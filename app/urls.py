@@ -16,7 +16,7 @@ urlpatterns = [
     path("grade_component/<id>/", GradeComponentView.as_view(), name="grade_components"),
     path("groups/<id>/grading/", ProjectGroupGradingView.as_view(), name="grading_system"),
     path("projects/<id>/grading/", ProjectGradesView.as_view(), name="project_grades"),
-    path("root/new_users/", RootAddUsers.as_view(), name="root_add_users"),
+    path("groups/<id>/new_users/", RootAddUsers.as_view(), name="groups_add_users"),
     path("accounts/mock/", MockAccounts.as_view(), name="mock_accounts"),
     path('', include(router.urls)),
 ]

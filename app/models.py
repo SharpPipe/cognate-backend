@@ -42,6 +42,7 @@ class UserProject(models.Model):
         ADMIN = ("A", "Admin")
         OWNER = ("O", "Owner")
         VIEWER = ("V", "Viewer")
+        MEMBER = ("M", "Member")
 
     rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)

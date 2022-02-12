@@ -164,9 +164,10 @@ class ProjectGradesView(views.APIView):
 
 
 class RootAddUsers(views.APIView):
-    def post(self, request):
+    def post(self, request, id):
         if not request.user.is_superuser:
             return JsonResponse({4: 18})
+
         users = request.data["data"]
         user_objects = []
         for user in users:
@@ -187,7 +188,31 @@ class RootAddUsers(views.APIView):
             user_object = serializer.save()
             Profile.objects.create(user=user_object, actual_account=False)
             user_objects.append(user_object)
-        return JsonResponse({200: "OK", "data": [UserSerializer(x).data for x in user_objects]})
+
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        projects = Project.objects.filter(project_group=project_group)
+        for project in projects:
+            users_found = []
+            for repo in project.repository_set.all():
+                repo_data = RepositorySerializer(repo).data
+
+                base_url = "https://gitlab.cs.ttu.ee"
+                api_part = "/api/v4"
+                endpoint_part = f"/projects/{repo_data['gitlab_id']}/members/all"
+                token_part = f"?private_token={request.user.profile.gitlab_token}"
+
+                answer = requests.get(base_url + api_part + endpoint_part + token_part)
+                answer_json = answer.json()
+
+                for member in answer_json:
+                    for user in user_objects:
+                        if user.username in users_found:
+                            continue
+                        if member["username"] == user.username:
+                            UserProject.objects.create(rights="M", account=user, project=project)
+                            users_found.append(user.username)
+                            print(f"{member['username']} found in project {project.name}")
+        return JsonResponse({200: "OK"})
 
 
 class MockAccounts(views.APIView):
