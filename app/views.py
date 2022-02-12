@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade
+    GradeMilestone, UserProject, UserGrade, Milestone
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades
 
@@ -62,7 +62,8 @@ class ProjectGroupLoadProjectsView(views.APIView):
         base_url = "https://gitlab.cs.ttu.ee"
         api_part = "/api/v4"
         endpoint_part = f"/groups/{group.group_id}/projects"
-        token_part = f"?private_token={profile.gitlab_token}"
+        token_part = f"?private_token={profile.gitlab_token}&per_page=100"
+        # TODO: Theoretically there is a chance that there are more than 100 projects per group
 
         answer = requests.get(base_url + api_part + endpoint_part + token_part)
         print(f"Got response")
@@ -286,6 +287,10 @@ class RepositoryUpdateView(views.APIView):
         endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
         token_part = f"?private_token={request.user.profile.gitlab_token}"
         answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
-        print(answer)
+        for milestone in answer:
+            gitlab_id = milestone["id"]
+            if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
+                Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
+                print(f"Created milestone {milestone['title']}")
 
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
