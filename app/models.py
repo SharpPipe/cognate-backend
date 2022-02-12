@@ -64,8 +64,11 @@ class GradeCategory(models.Model):
 
 
 class GradeComponent(models.Model):
+    class GradeType(models.TextChoices):
+        CUSTOM = ("C", "Custom")
+
     total = models.IntegerField()
-    # TODO: Add type enum?
+    grade_type = models.CharField(max_length=1, choices=GradeType.choices, default=GradeType.CUSTOM)
     description = models.TextField()
     grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True)
 
