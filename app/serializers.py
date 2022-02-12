@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
-from .models import ProjectGroup, Profile, Project, Repository
+from .models import ProjectGroup, Profile, Project, Repository, GradeCategory
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -30,6 +30,12 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = Profile
         fields = ['id', 'user_id', 'gitlab_token']
         read_only_fields = ['user_id']
+
+
+class GradeCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GradeCategory
+        fields = ['id', 'name', 'parent_category']
 
 
 class RegisterSerializer(serializers.Serializer):

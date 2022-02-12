@@ -59,6 +59,7 @@ class UserProjectGroup(models.Model):
 
 
 class GradeCategory(models.Model):
+    name = models.CharField(max_length=200, null=True, blank=True)
     parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
 
 
@@ -109,8 +110,8 @@ class Commit(models.Model):
 
 
 class GradeCalculation(models.Model):
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True)
-    project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE)
+    grade_category = models.OneToOneField(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="grade_calculation")
+    project_group = models.OneToOneField(ProjectGroup, on_delete=models.CASCADE)
 
 
 class UserGrade(models.Model):
