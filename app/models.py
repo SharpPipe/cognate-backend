@@ -120,7 +120,7 @@ class GradeCalculation(models.Model):
 
 class UserGrade(models.Model):
     amount = models.DecimalField(max_digits=100, decimal_places=5)
-    account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
+    user_project = models.ForeignKey(UserProject, on_delete=models.CASCADE, null=True, blank=True)
     grade_component = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
 
 

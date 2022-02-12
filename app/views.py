@@ -23,15 +23,15 @@ def get_members_from_repo(repo, user):
     return answer.json()
 
 
-def add_user_grade_recursive(user, category):
-    UserGrade.objects.create(amount=0, account=user, grade_component=category)
+def add_user_grade_recursive(user_project, category):
+    UserGrade.objects.create(amount=0, user_project=user_project, grade_component=category)
     for child in category.children.all():
-        add_user_grade_recursive(user, child)
+        add_user_grade_recursive(user_project, child)
 
 
-def add_user_grade(user, project_group):
+def add_user_grade(user_project, project_group):
     root_category = project_group.grade_calculation.grade_category
-    add_user_grade_recursive(user, root_category)
+    add_user_grade_recursive(user_project, root_category)
 
 
 class ProjectGroupView(views.APIView):
@@ -85,8 +85,8 @@ class ProjectGroupLoadProjectsView(views.APIView):
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
             members = [member["username"] for member in get_members_from_repo(repo, request.user)]
             for user in User.objects.filter(username__in=members).all():
-                UserProject.objects.create(rights="M", account=user, project=project_object)
-                add_user_grade(user, group)
+                user_project = UserProject.objects.create(rights="M", account=user, project=project_object)
+                add_user_grade(user_project, group)
 
         return JsonResponse({"data": data})
 
@@ -135,8 +135,7 @@ class GradeCategoryView(views.APIView):
             grade_category.save()
             for project in project_group.project_set.all():
                 for user_project in project.userproject_set.all():
-                    user = user_project.account
-                    add_user_grade_recursive(user, grade_category)
+                    add_user_grade_recursive(user_project, grade_category)
             if "start" in request.data.keys() and "end" in request.data.keys():
                 grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
             return JsonResponse(GradeCategorySerializer(grade_category).data)
@@ -186,10 +185,10 @@ class ProjectGradesView(views.APIView):
         root_category = project_group.grade_calculation.grade_category
         print(root_category)
 
-        users = [user_project.account.id for user_project in UserProject.objects.filter(project=project).all()]
+        users = [user_project.id for user_project in UserProject.objects.filter(project=project).all()]
         print(users)
 
-        return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"users": users}).data)
+        return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
 
 
 class RootAddUsers(views.APIView):
@@ -230,8 +229,8 @@ class RootAddUsers(views.APIView):
                         if user.username in users_found:
                             continue
                         if member["username"] == user.username:
-                            UserProject.objects.create(rights="M", account=user, project=project)
-                            add_user_grade_recursive(user, grade_category_root)
+                            user_project = UserProject.objects.create(rights="M", account=user, project=project)
+                            add_user_grade_recursive(user_project, grade_category_root)
                             users_found.append(user.username)
                             print(f"{member['username']} found in project {project.name}")
         return JsonResponse({200: "OK"})
