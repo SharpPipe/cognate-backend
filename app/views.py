@@ -24,7 +24,7 @@ class ProjectGroupView(views.APIView):
         if serializer.is_valid():
             project_group = serializer.save()
             UserProjectGroup.objects.create(rights="O", account=request.user, project_group=project_group)
-            grade_category = GradeCategory.objects.create(name="root")
+            grade_category = GradeCategory.objects.create(name="root", grade_type="S")
             grade_calculation = GradeCalculation.objects.create(grade_category=grade_category, project_group=project_group)
         return JsonResponse({})
 
@@ -227,4 +227,25 @@ class GradeUserView(views.APIView):
         user = User.objects.filter(pk=user_id).first()
         grade = GradeCategory.objects.filter(pk=grade_id).first()
         user_grade = UserGrade.objects.create(amount=request.data["amount"], account=user, grade_component=grade)
+
+        parent = grade.parent_category
+        while parent is not None:
+            modify = False
+            if parent.grade_type == "S":
+                func = sum
+                modify = True
+            elif parent.grade_type == "M":
+                func = max
+                modify = True
+
+            if modify:
+                children = parent.children
+                children_total_potential = func([c.total for c in children])
+                children_total_value = func([UserGrade.objects.filter(account=user).filter(grade_component=c).first().amount for c in children])
+                parent_grade = UserGrade.objects.filter(account=user).filter(grade_component=parent).first()
+                parent_grade.amount = parent.total * children_total_value / children_total_potential
+                parent_grade.save()
+
+            grade = parent
+            parent = grade.parent_category
         return JsonResponse({200: "OK"})
