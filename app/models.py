@@ -111,7 +111,7 @@ class Commit(models.Model):
 
 class GradeCalculation(models.Model):
     grade_category = models.OneToOneField(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="grade_calculation")
-    project_group = models.OneToOneField(ProjectGroup, on_delete=models.CASCADE)
+    project_group = models.OneToOneField(ProjectGroup, on_delete=models.CASCADE, related_name="grade_calculation")
 
 
 class UserGrade(models.Model):

@@ -32,10 +32,18 @@ class ProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ['user_id']
 
 
+class RecursiveField(serializers.Serializer):
+    def to_representation(self, value):
+        serializer = self.parent.parent.__class__(value, context=self.context)
+        return serializer.data
+
+
 class GradeCategorySerializer(serializers.ModelSerializer):
+    gradecategory_set = RecursiveField(many=True)
+
     class Meta:
         model = GradeCategory
-        fields = ['id', 'name', 'parent_category']
+        fields = ['id', 'name', 'parent_category', 'gradecategory_set']
 
 
 class RegisterSerializer(serializers.Serializer):

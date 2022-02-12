@@ -105,3 +105,14 @@ class GradeCategoryView(views.APIView):
             grade_category.save()
             return JsonResponse(GradeCategorySerializer(grade_category).data)
         return JsonResponse({4: 20})
+
+
+class ProjectGroupGradingView(views.APIView):
+    def get(self, request, id):
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
+        if user_project_groups.count() == 0:
+            return JsonResponse({4: 20})
+        root_category = project_group.grade_calculation.grade_category
+        print(root_category)
+        return JsonResponse(GradeCategorySerializer(root_category).data)
