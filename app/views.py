@@ -3,7 +3,8 @@ import requests
 from rest_framework import views
 from django.http import JsonResponse
 
-from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation
+from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
+    GradeMilestone
 from .serializers import ProjectGroupSerializer, ProfileSerializer, ProjectSerializer, RepositorySerializer, \
     GradeCategorySerializer, GradeComponentSerializer
 
@@ -104,6 +105,8 @@ class GradeCategoryView(views.APIView):
             grade_category = serializer.save()
             grade_category.parent_category = parent
             grade_category.save()
+            if "start" in request.data.keys() and "end" in request.data.keys():
+                grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
             return JsonResponse(GradeCategorySerializer(grade_category).data)
         return JsonResponse({4: 20})
 

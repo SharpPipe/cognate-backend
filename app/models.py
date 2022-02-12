@@ -76,7 +76,7 @@ class GradeComponent(models.Model):
 class GradeMilestone(models.Model):
     start = models.DateTimeField()
     end = models.DateTimeField()
-    grade_component = models.ForeignKey(GradeComponent, on_delete=models.CASCADE)
+    grade_category = models.OneToOneField(GradeCategory, on_delete=models.CASCADE, null=True, blank=True)
 
 
 class Milestone(models.Model):

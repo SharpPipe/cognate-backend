@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
-from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeComponent
+from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeComponent, GradeMilestone
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -44,13 +44,21 @@ class GradeComponentSerializer(serializers.ModelSerializer):
         fields = ['id', 'total', 'grade_type', 'description', 'grade_category']
 
 
+class GradeMilestoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GradeMilestone
+        fields = ['start', 'end']
+
+
 class GradeCategorySerializer(serializers.ModelSerializer):
-    gradecategory_set = RecursiveField(many=True)
-    gradecomponent_set = GradeComponentSerializer(many=True)
+    gradecategory_set = RecursiveField(many=True, required=False)
+    gradecomponent_set = GradeComponentSerializer(many=True, required=False)
+    grademilestone = GradeMilestoneSerializer(required=False)
 
     class Meta:
         model = GradeCategory
-        fields = ['id', 'name', 'parent_category', 'gradecategory_set', 'gradecomponent_set']
+        fields = ['id', 'name', 'parent_category', 'gradecategory_set', 'gradecomponent_set', 'grademilestone']
+        read_only_fields = ['gradecategory_set', 'gradecomponent_set']
 
 
 class RegisterSerializer(serializers.Serializer):
