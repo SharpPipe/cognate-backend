@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
-from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeMilestone
+from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeMilestone, UserGrade
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -51,6 +51,41 @@ class GradeCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = GradeCategory
         fields = ['id', 'name', 'total', 'grade_type', 'parent_category', 'description', 'children', 'grademilestone']
+
+
+class AccountUsernameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username']
+
+
+class UserGradeSerializer(serializers.ModelSerializer):
+    account = AccountUsernameSerializer()
+
+    class Meta:
+        model = UserGrade
+        fields = ['amount', 'account']
+        # list_serializer_class = IsActiveListSerializer
+
+
+class UserGradeListSerializer(serializers.ListSerializer):
+
+    child = UserGradeSerializer()
+
+    def to_representation(self, data):
+        data = data.filter(account__in=self.child.context['users'])
+        return super(UserGradeListSerializer, self).to_representation(data)
+
+
+class GradeCategorySerializerWithGrades(serializers.ModelSerializer):
+
+    children = RecursiveField(many=True, required=False)
+    grademilestone = GradeMilestoneSerializer(required=False)
+    usergrade_set = UserGradeListSerializer()
+
+    class Meta:
+        model = GradeCategory
+        fields = ['id', 'name', 'total', 'grade_type', 'parent_category', 'description', 'children', 'grademilestone', 'usergrade_set']
 
 
 class RegisterSerializer(serializers.Serializer):
