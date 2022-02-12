@@ -8,9 +8,9 @@ from django.http import JsonResponse
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject
-from .serializers import ProjectGroupSerializer, ProfileSerializer, ProjectSerializer, RepositorySerializer, \
-    GradeCategorySerializer, RegisterSerializer, UserSerializer
+    GradeMilestone, UserProject, UserGrade
+from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
+    RegisterSerializer, GradeCategorySerializerWithGrades
 
 
 class ProjectGroupView(views.APIView):
@@ -152,7 +152,15 @@ class ProjectGradesView(views.APIView):
         print(members)
         print(project_group_admins.count())
         print(project.project_group)
-        return JsonResponse({6: 9})
+
+        project_group = project.project_group
+        root_category = project_group.grade_calculation.grade_category
+        print(root_category)
+
+        users = [user_project.account.id for user_project in UserProject.objects.filter(project=project).all()]
+        print(users)
+
+        return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"users": users}).data)
 
 
 class RootAddUsers(views.APIView):
@@ -211,3 +219,12 @@ class MockAccounts(views.APIView):
     def get(self, request):
         accounts = User.objects.filter(profile__actual_account=False)
         return JsonResponse([x.id for x in accounts], safe=False)
+
+
+class GradeUserView(views.APIView):
+    def post(self, request, user_id, grade_id):
+        print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
+        user = User.objects.filter(pk=user_id).first()
+        grade = GradeCategory.objects.filter(pk=grade_id).first()
+        user_grade = UserGrade.objects.create(amount=request.data["amount"], account=user, grade_component=grade)
+        return JsonResponse({200: "OK"})
