@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework import routers
 
 from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, ProjectsView, RepositoryView, \
-    GradeCategoryView, ProjectGroupGradingView, GradeComponentView, ProjectGradesView
+    GradeCategoryView, ProjectGroupGradingView, GradeComponentView, ProjectGradesView, RootAddUsers
 
 router = routers.DefaultRouter()
 
@@ -16,5 +16,6 @@ urlpatterns = [
     path("grade_component/<id>/", GradeComponentView.as_view(), name="grade_components"),
     path("groups/<id>/grading/", ProjectGroupGradingView.as_view(), name="grading_system"),
     path("projects/<id>/grading/", ProjectGradesView.as_view(), name="project_grades"),
+    path("root/new_users/", RootAddUsers.as_view(), name="root_add_users"),
     path('', include(router.urls)),
 ]

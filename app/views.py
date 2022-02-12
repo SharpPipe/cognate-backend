@@ -1,4 +1,7 @@
+import string
+
 import requests
+import random
 
 from rest_framework import views
 from django.http import JsonResponse
@@ -6,7 +9,7 @@ from django.http import JsonResponse
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
     GradeMilestone, UserProject
 from .serializers import ProjectGroupSerializer, ProfileSerializer, ProjectSerializer, RepositorySerializer, \
-    GradeCategorySerializer, GradeComponentSerializer
+    GradeCategorySerializer, GradeComponentSerializer, RegisterSerializer, UserSerializer
 
 
 class ProjectGroupView(views.APIView):
@@ -108,7 +111,7 @@ class GradeCategoryView(views.APIView):
             if "start" in request.data.keys() and "end" in request.data.keys():
                 grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
             return JsonResponse(GradeCategorySerializer(grade_category).data)
-        return JsonResponse({4: 20})
+        return JsonResponse({4: 18})
 
 
 class GradeComponentView(views.APIView):
@@ -138,7 +141,7 @@ class ProjectGroupGradingView(views.APIView):
         project_group = ProjectGroup.objects.filter(pk=id).first()
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         if user_project_groups.count() == 0:
-            return JsonResponse({4: 20})
+            return JsonResponse({4: 18})
         root_category = project_group.grade_calculation.grade_category
         print(root_category)
         return JsonResponse(GradeCategorySerializer(root_category).data)
@@ -151,10 +154,36 @@ class ProjectGradesView(views.APIView):
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project.project_group)
         if user_project_groups.count() == 0:
             # TODO: If user_projects has users, then the request came from student, he should see his own grades.
-            return JsonResponse({4: 20})
+            return JsonResponse({4: 18})
         members = project.userproject_set
         project_group_admins = project.project_group.user_project_groups
         print(members)
         print(project_group_admins.count())
         print(project.project_group)
         return JsonResponse({6: 9})
+
+
+class RootAddUsers(views.APIView):
+    def post(self, request):
+        if not request.user.is_superuser:
+            return JsonResponse({4: 18})
+        users = request.data["data"]
+        user_objects = []
+        for user in users:
+            email = user + "@ttu.ee"
+            sub_data = {}
+            sub_data["username"] = user
+            sub_data["email"] = email
+            sub_data["password"] = "".join([random.choice(string.ascii_lowercase) for _ in range(20)])
+            sub_data["password_confirm"] = sub_data["password"]
+            if "." in user:
+                sub_data["first_name"] = user.split(".")[0]
+                sub_data["last_name"] = ".".join(user.split(".")[1:])
+            else:
+                sub_data["first_name"] = user[:len(user) // 2]
+                sub_data["last_name"] = user[len(user) // 2:]
+            serializer = RegisterSerializer(data=sub_data)
+            serializer.is_valid()
+            user_object = serializer.save()
+            user_objects.append(user_object)
+        return JsonResponse({200: "OK", "data": [UserSerializer(x).data for x in user_objects]})
