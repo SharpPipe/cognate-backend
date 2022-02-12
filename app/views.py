@@ -13,6 +13,27 @@ from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySe
     RegisterSerializer, GradeCategorySerializerWithGrades
 
 
+def get_members_from_repo(repo, user):
+    base_url = "https://gitlab.cs.ttu.ee"
+    api_part = "/api/v4"
+    endpoint_part = f"/projects/{repo.gitlab_id}/members/all"
+    token_part = f"?private_token={user.profile.gitlab_token}"
+
+    answer = requests.get(base_url + api_part + endpoint_part + token_part)
+    return answer.json()
+
+
+def add_user_grade_recursive(user, category):
+    UserGrade.objects.create(amount=0, account=user, grade_component=category)
+    for child in category.children.all():
+        add_user_grade_recursive(user, child)
+
+
+def add_user_grade(user, project_group):
+    root_category = project_group.grade_calculation.grade_category
+    add_user_grade_recursive(user, root_category)
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
@@ -61,7 +82,11 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 "url": project["web_url"]
             })
             project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
-            Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
+            repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
+            members = [member["username"] for member in get_members_from_repo(repo, request.user)]
+            for user in User.objects.filter(username__in=members).all():
+                UserProject.objects.create(rights="M", account=user, project=project_object)
+                add_user_grade(user, group)
 
         return JsonResponse({"data": data})
 
@@ -108,6 +133,10 @@ class GradeCategoryView(views.APIView):
             grade_category = serializer.save()
             grade_category.parent_category = parent
             grade_category.save()
+            for project in project_group.project_set.all():
+                for user_project in project.userproject_set.all():
+                    user = user_project.account
+                    add_user_grade_recursive(user, grade_category)
             if "start" in request.data.keys() and "end" in request.data.keys():
                 grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
             return JsonResponse(GradeCategorySerializer(grade_category).data)
@@ -191,25 +220,18 @@ class RootAddUsers(views.APIView):
 
         project_group = ProjectGroup.objects.filter(pk=id).first()
         projects = Project.objects.filter(project_group=project_group)
+        grade_category_root = project_group.grade_calculation.grade_category
         for project in projects:
             users_found = []
             for repo in project.repository_set.all():
-                repo_data = RepositorySerializer(repo).data
-
-                base_url = "https://gitlab.cs.ttu.ee"
-                api_part = "/api/v4"
-                endpoint_part = f"/projects/{repo_data['gitlab_id']}/members/all"
-                token_part = f"?private_token={request.user.profile.gitlab_token}"
-
-                answer = requests.get(base_url + api_part + endpoint_part + token_part)
-                answer_json = answer.json()
-
+                answer_json = get_members_from_repo(repo, request.user)
                 for member in answer_json:
                     for user in user_objects:
                         if user.username in users_found:
                             continue
                         if member["username"] == user.username:
                             UserProject.objects.create(rights="M", account=user, project=project)
+                            add_user_grade_recursive(user, grade_category_root)
                             users_found.append(user.username)
                             print(f"{member['username']} found in project {project.name}")
         return JsonResponse({200: "OK"})
