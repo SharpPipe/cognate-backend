@@ -136,7 +136,7 @@ class GradeCategoryView(views.APIView):
             for project in project_group.project_set.all():
                 for user_project in project.userproject_set.all():
                     add_user_grade_recursive(user_project, grade_category)
-            if "start" in request.data.keys() and "end" in request.data.keys():
+            if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
                 grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
             return JsonResponse(GradeCategorySerializer(grade_category).data)
         return JsonResponse({4: 18})
@@ -273,3 +273,19 @@ class GradeUserView(views.APIView):
             grade = parent
             parent = grade.parent_category
         return JsonResponse({200: "OK"})
+
+
+class RepositoryUpdateView(views.APIView):
+    def get(self, request, id):
+        # TODO: add validation
+        repo = Repository.objects.filter(pk=id).first()
+        base_url = "https://gitlab.cs.ttu.ee"
+        api_part = "/api/v4"
+
+
+        endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
+        token_part = f"?private_token={request.user.profile.gitlab_token}"
+        answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+        print(answer)
+
+        return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
