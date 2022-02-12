@@ -83,10 +83,10 @@ class RepositoryView(views.APIView):
 
 class ProfileView(views.APIView):
     def put(self, request):
+        print(request.user)
         profile = Profile.objects.filter(user=request.user).first()
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
+        profile.gitlab_token = request.data["gitlab_token"]
+        profile.save()
         return JsonResponse({})
 
 
