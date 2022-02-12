@@ -113,6 +113,20 @@ class GradeCategoryView(views.APIView):
             return JsonResponse(GradeCategorySerializer(grade_category).data)
         return JsonResponse({4: 18})
 
+    def delete(self, request, id):
+        grade_category = GradeCategory.objects.filter(pk=id).first()
+        root = grade_category
+        while root.parent_category is not None:
+            root = root.parent_category
+        project_group = root.grade_calculation.project_group
+        user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
+        allowed_rights = ["A", "O"]
+        has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
+        if has_rights:
+            grade_category.delete()
+            return JsonResponse({200: "OK"})
+        return JsonResponse({4: 18})
+
 
 class ProjectGroupGradingView(views.APIView):
     def get(self, request, id):
