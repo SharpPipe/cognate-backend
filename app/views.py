@@ -237,6 +237,9 @@ class GradeUserView(views.APIView):
             elif parent.grade_type == "M":
                 func = max
                 modify = True
+            elif parent.grade_type == "I":
+                func = min
+                modify = True
 
             if modify:
                 children = parent.children

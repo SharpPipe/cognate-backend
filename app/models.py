@@ -65,6 +65,7 @@ class GradeCategory(models.Model):
         CUSTOM = ("C", "Custom")
         SUM = ("S", "Sum")  # Grade is sum of children, then scaled using total
         MAX = ("M", "Max")  # Grade is max of children, then scaled using total
+        MIN = ("I", "Min")  # Grade is max of children, then scaled using total
 
     name = models.CharField(max_length=200, null=True, blank=True)
     total = models.DecimalField(max_digits=100, decimal_places=5, default=1.0)
