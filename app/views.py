@@ -4,7 +4,7 @@ from rest_framework import views
 from django.http import JsonResponse
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone
+    GradeMilestone, UserProject
 from .serializers import ProjectGroupSerializer, ProfileSerializer, ProjectSerializer, RepositorySerializer, \
     GradeCategorySerializer, GradeComponentSerializer
 
@@ -142,3 +142,19 @@ class ProjectGroupGradingView(views.APIView):
         root_category = project_group.grade_calculation.grade_category
         print(root_category)
         return JsonResponse(GradeCategorySerializer(root_category).data)
+
+
+class ProjectGradesView(views.APIView):
+    def get(self, request, id):
+        project = Project.objects.filter(pk=id).first()
+        user_projects = UserProject.objects.filter(account=request.user).filter(project=project)
+        user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project.project_group)
+        if user_project_groups.count() == 0:
+            # TODO: If user_projects has users, then the request came from student, he should see his own grades.
+            return JsonResponse({4: 20})
+        members = project.userproject_set
+        project_group_admins = project.project_group.user_project_groups
+        print(members)
+        print(project_group_admins.count())
+        print(project.project_group)
+        return JsonResponse({6: 9})
