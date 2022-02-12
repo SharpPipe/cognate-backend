@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
     GradeMilestone, UserProject
 from .serializers import ProjectGroupSerializer, ProfileSerializer, ProjectSerializer, RepositorySerializer, \
-    GradeCategorySerializer, GradeComponentSerializer, RegisterSerializer, UserSerializer
+    GradeCategorySerializer, RegisterSerializer, UserSerializer
 
 
 class ProjectGroupView(views.APIView):
@@ -112,28 +112,6 @@ class GradeCategoryView(views.APIView):
                 grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
             return JsonResponse(GradeCategorySerializer(grade_category).data)
         return JsonResponse({4: 18})
-
-
-class GradeComponentView(views.APIView):
-    def post(self, request, id):
-        serializer = GradeComponentSerializer(data=request.data)
-        parent = GradeCategory.objects.filter(pk=id).first()
-
-        # Validate that user has correct access rights
-        root = parent
-        while root.parent_category is not None:
-            root = root.parent_category
-        project_group = root.grade_calculation.project_group
-        user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
-        allowed_rights = ["A", "O"]
-        has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
-
-        if has_rights and serializer.is_valid():
-            grade_component = serializer.save()
-            grade_component.grade_category = parent
-            grade_component.save()
-            return JsonResponse(GradeComponentSerializer(grade_component).data)
-        return JsonResponse({4: 20})
 
 
 class ProjectGroupGradingView(views.APIView):

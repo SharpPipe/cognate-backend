@@ -61,18 +61,16 @@ class UserProjectGroup(models.Model):
 
 
 class GradeCategory(models.Model):
-    name = models.CharField(max_length=200, null=True, blank=True)
-    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
-
-
-class GradeComponent(models.Model):
     class GradeType(models.TextChoices):
         CUSTOM = ("C", "Custom")
+        SUM = ("S", "Sum")  # Grade is sum of children, then scaled using total
+        MAX = ("M", "Max")  # Grade is max of children, then scaled using total
 
-    total = models.IntegerField()
+    name = models.CharField(max_length=200, null=True, blank=True)
+    total = models.IntegerField(default=1)
     grade_type = models.CharField(max_length=1, choices=GradeType.choices, default=GradeType.CUSTOM)
-    description = models.TextField()
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
 
 
 class GradeMilestone(models.Model):
@@ -122,7 +120,7 @@ class GradeCalculation(models.Model):
 class UserGrade(models.Model):
     amount = models.IntegerField()
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
-    grade_component = models.ForeignKey(GradeComponent, on_delete=models.CASCADE)
+    grade_component = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
 
 
 
