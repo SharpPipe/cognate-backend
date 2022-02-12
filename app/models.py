@@ -4,6 +4,7 @@ from django.db import models
 class Profile(models.Model):
     user = models.OneToOneField('auth.User', on_delete=models.CASCADE)
     gitlab_token = models.CharField(max_length=1000, null=True, blank=True)
+    actual_account = models.BooleanField(default=True)
 
 
 class Committer(models.Model):

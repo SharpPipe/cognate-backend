@@ -13,7 +13,7 @@ class RegisterApi(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        Profile.objects.create(user=user)
+        Profile.objects.create(user=user, actual_account=True)
 
         return Response({
             "user": UserSerializer(user, context=self.get_serializer_context()).data,

@@ -185,6 +185,6 @@ class RootAddUsers(views.APIView):
             serializer = RegisterSerializer(data=sub_data)
             serializer.is_valid()
             user_object = serializer.save()
-            Profile.objects.create(user=user_object)
+            Profile.objects.create(user=user_object, actual_account=False)
             user_objects.append(user_object)
         return JsonResponse({200: "OK", "data": [UserSerializer(x).data for x in user_objects]})
