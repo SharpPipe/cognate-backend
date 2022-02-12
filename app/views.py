@@ -5,6 +5,7 @@ import random
 
 from rest_framework import views
 from django.http import JsonResponse
+from django.contrib.auth.models import User
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
     GradeMilestone, UserProject
@@ -83,7 +84,6 @@ class RepositoryView(views.APIView):
 
 class ProfileView(views.APIView):
     def put(self, request):
-        print(request.user)
         profile = Profile.objects.filter(user=request.user).first()
         profile.gitlab_token = request.data["gitlab_token"]
         profile.save()
@@ -188,3 +188,9 @@ class RootAddUsers(views.APIView):
             Profile.objects.create(user=user_object, actual_account=False)
             user_objects.append(user_object)
         return JsonResponse({200: "OK", "data": [UserSerializer(x).data for x in user_objects]})
+
+
+class MockAccounts(views.APIView):
+    def get(self, request):
+        accounts = User.objects.filter(profile__actual_account=False)
+        return JsonResponse([x.id for x in accounts], safe=False)
