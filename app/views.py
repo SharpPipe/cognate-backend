@@ -245,12 +245,34 @@ class MockAccounts(views.APIView):
         return JsonResponse([x.id for x in accounts], safe=False)
 
 
+def pick_user_grade(query):
+    options = query.all()
+    order = ["M", "A", "P"]
+    for target_type in order:
+        for option in options:
+            if option.grade_type == target_type:
+                return option
+
+
 class GradeUserView(views.APIView):
     def post(self, request, user_id, grade_id):
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
-        user = User.objects.filter(pk=user_id).first()
+        user_project = UserProject.objects.filter(pk=user_id).first()
         grade = GradeCategory.objects.filter(pk=grade_id).first()
-        user_grade = UserGrade.objects.create(amount=request.data["amount"], account=user, grade_component=grade)
+        search = UserGrade.objects.filter(user_project=user_project).filter(grade_component=grade)
+
+        added_data = False
+        for old_grade in search.all():
+            if old_grade.grade_type == "P":
+                old_grade.delete()
+            elif old_grade.grade_type == "M":
+                old_grade.amount = request.data["amount"]
+                old_grade.save()
+                added_data = True
+            elif old_grade.grade_type == "A":
+                pass
+        if not added_data:
+            new_grade = UserGrade.objects.create(amount=request.data["amount"], user_project=user_project, grade_component=grade, grade_type="M")
 
         parent = grade.parent_category
         while parent is not None:
@@ -268,10 +290,14 @@ class GradeUserView(views.APIView):
             if modify:
                 children = parent.children
                 children_total_potential = func([c.total for c in children])
-                children_total_value = func([UserGrade.objects.filter(account=user).filter(grade_component=c).first().amount for c in children])
-                parent_grade = UserGrade.objects.filter(account=user).filter(grade_component=parent).first()
+                children_total_value = func([pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_component=c)).amount for c in children])
+
+                # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
+                parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_component=parent).first()
                 parent_grade.amount = parent.total * children_total_value / children_total_potential
                 parent_grade.save()
+            else:
+                break
 
             grade = parent
             parent = grade.parent_category
