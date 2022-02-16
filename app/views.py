@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, IssueMilestone, TimeSpent
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades
 
@@ -276,6 +276,47 @@ class GradeUserView(views.APIView):
         return JsonResponse({200: "OK"})
 
 
+available_times = {
+    "m": 1,
+    "h": 60,
+    "d": 480,
+    "w": 2400
+}
+
+
+def minute_amount(message):
+    at_numbers = True
+    number_part = ''
+    letter_part = ''
+    for letter in message:
+        if letter.isdigit():
+            if not at_numbers:
+                return False
+            number_part += letter
+        else:
+            at_numbers = False
+            letter_part += letter
+    if len(number_part) == 0 or len(number_part) == 0:
+        return False
+    number = int(number_part)
+    if letter_part not in available_times.keys():
+        return False
+    return number * available_times[letter_part]
+
+
+def is_time_spent_message(message):
+    if "added " not in message:
+        return False, 0
+    message = message.split("added ")[1]
+    if " of time spent" not in message:
+        return False, 0
+    message = message.split(" of time spent")[0]
+    parts = [minute_amount(x) for x in message.split(" ")]
+    if False in parts:
+        return False, 0
+    return True, sum(parts)
+
+
 class RepositoryUpdateView(views.APIView):
     def get(self, request, id):
         # TODO: add validation
@@ -297,6 +338,7 @@ class RepositoryUpdateView(views.APIView):
         issues = []
         endpoint_part = f"/projects/{repo.gitlab_id}/issues"
         counter = 1
+        issues_to_refresh = []
         while True:
             answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
             issues += answer
@@ -304,8 +346,46 @@ class RepositoryUpdateView(views.APIView):
                 break
             counter += 1
         for issue in issues:
-            print(issue)
-            print()
-        print(len(issues))
+            gitlab_id = issue['id']
+            gitlab_iid = issue['iid']
+            title = issue['title']
+            milestone = issue['milestone']
+            issues_to_refresh.append((gitlab_iid, gitlab_id))
+            if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
+                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
+                if milestone is not None:
+                    IssueMilestone.objects.create(issue=issue_object, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
+                    pass
+
+        # Load all time spent
+        time_spents = []
+
+        for issue, id in issues_to_refresh:
+            endpoint_part = f"/projects/{repo.gitlab_id}/issues/{issue}/notes"
+            counter = 1
+            while True:
+                url = base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)
+                answer = requests.get(url).json()
+                time_spents += [(id, x) for x in answer]
+                if len(answer) < 100:
+                    break
+                counter += 1
+        for id, note in time_spents:
+            body = note['body']
+            author = note['author']['username']
+            is_time_spent, amount = is_time_spent_message(body)
+            gitlab_id = note['id']
+            if is_time_spent:
+                user = User.objects.filter(username=author)
+                if user.count() == 0:
+                    print(f"Error, unknown user {author} logged time, repo id {repo.gitlab_id}")
+                    continue
+                if TimeSpent.objects.filter(gitlab_id=gitlab_id).count() == 0:
+                    user = user.first()
+                    created_at = note['created_at']
+                    issue = Issue.objects.filter(gitlab_id=id).first()
+                    time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
+            else:
+                print(f"Unknown message with content {body}")
 
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})

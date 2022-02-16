@@ -1,3 +1,5 @@
+
+from django.contrib.auth.models import User
 from django.db import models
 
 
@@ -88,21 +90,22 @@ class Milestone(models.Model):
 
 
 class Issue(models.Model):
-    pass
+    gitlab_id = models.IntegerField()
+    title = models.TextField(null=True, blank=True)
+    gitlab_iid = models.IntegerField()
 
 
 class IssueMilestone(models.Model):
-    start = models.DateTimeField()
-    end = models.DateTimeField()
     issue = models.ForeignKey(Issue, on_delete=models.CASCADE)
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE)
 
 
 class TimeSpent(models.Model):
+    gitlab_id = models.IntegerField()
     amount = models.IntegerField()
     time = models.DateTimeField()
     issue = models.ForeignKey(Issue, on_delete=models.CASCADE)
-    user = models.ForeignKey(Committer, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
 
 
 class Commit(models.Model):
