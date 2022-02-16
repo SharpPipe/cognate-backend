@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
     GradeMilestone, UserProject, UserGrade, Milestone, Issue, IssueMilestone, TimeSpent
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
-    RegisterSerializer, GradeCategorySerializerWithGrades
+    RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer
 
 
 def get_members_from_repo(repo, user):
@@ -441,3 +441,10 @@ class ProjectGroupUpdateView(views.APIView):
             print(f"{100 * i / len(repos)}% done refreshing repos")
         print(new_users)
         return JsonResponse({200: "OK", "data": ProjectGroupSerializer(project_group).data})
+
+
+class ProjectMilestonesView(views.APIView):
+    def get(self, request, id):
+        project = Project.objects.filter(pk=id).first()
+        milestones = Milestone.objects.filter(repository__project=project)
+        return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
