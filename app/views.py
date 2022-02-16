@@ -88,6 +88,9 @@ class ProjectGroupLoadProjectsView(views.APIView):
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
             members = [member["username"] for member in get_members_from_repo(repo, request.user)]
             for user in User.objects.filter(username__in=members).all():
+                rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
+                if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
+                    continue
                 user_project = UserProject.objects.create(rights="M", account=user, project=project_object)
                 add_user_grade(user_project, group)
 
