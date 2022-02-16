@@ -82,7 +82,9 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 "id": project["id"],
                 "url": project["web_url"]
             })
-            project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
+            if Project.objects.filter(gitlab_id=project["id"]).count() > 0:
+                continue
+            project_object = Project.objects.create(gitlab_id=project["id"], name=project["name_with_namespace"], project_group=group)
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
             members = [member["username"] for member in get_members_from_repo(repo, request.user)]
             for user in User.objects.filter(username__in=members).all():
@@ -317,75 +319,96 @@ def is_time_spent_message(message):
     return True, sum(parts)
 
 
-class RepositoryUpdateView(views.APIView):
-    def get(self, request, id):
-        # TODO: add validation
-        repo = Repository.objects.filter(pk=id).first()
-        base_url = "https://gitlab.cs.ttu.ee"
-        api_part = "/api/v4"
-        token_part = f"?private_token={request.user.profile.gitlab_token}&per_page=100"
+def update_repository(id, user, new_users):
+    repo = Repository.objects.filter(pk=id).first()
+    base_url = "https://gitlab.cs.ttu.ee"
+    api_part = "/api/v4"
+    token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
 
-        # Load all milestones
-        endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
-        answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
-        for milestone in answer:
-            gitlab_id = milestone["id"]
-            if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
-                Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
-                print(f"Created milestone {milestone['title']}")
+    # Load all milestones
+    endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
+    answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+    for milestone in answer:
+        gitlab_id = milestone["id"]
+        if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
+            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
+            print(f"Created milestone {milestone['title']}")
 
-        # Load all issues
-        issues = []
-        endpoint_part = f"/projects/{repo.gitlab_id}/issues"
+    # Load all issues
+    issues = []
+    endpoint_part = f"/projects/{repo.gitlab_id}/issues"
+    counter = 1
+    issues_to_refresh = []
+    while True:
+        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
+        issues += answer
+        if len(answer) < 100:
+            break
+        counter += 1
+    for issue in issues:
+        gitlab_id = issue['id']
+        gitlab_iid = issue['iid']
+        title = issue['title']
+        milestone = issue['milestone']
+        issues_to_refresh.append((gitlab_iid, gitlab_id))
+        if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
+            issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
+            if milestone is not None:
+                IssueMilestone.objects.create(issue=issue_object, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
+                pass
+
+    # Load all time spent
+    time_spents = []
+
+    for issue, id in issues_to_refresh:
+        endpoint_part = f"/projects/{repo.gitlab_id}/issues/{issue}/notes"
         counter = 1
-        issues_to_refresh = []
         while True:
-            answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
-            issues += answer
+            url = base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)
+            answer = requests.get(url).json()
+            time_spents += [(id, x) for x in answer]
             if len(answer) < 100:
                 break
             counter += 1
-        for issue in issues:
-            gitlab_id = issue['id']
-            gitlab_iid = issue['iid']
-            title = issue['title']
-            milestone = issue['milestone']
-            issues_to_refresh.append((gitlab_iid, gitlab_id))
-            if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
-                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
-                if milestone is not None:
-                    IssueMilestone.objects.create(issue=issue_object, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
-                    pass
+    for id, note in time_spents:
+        body = note['body']
+        author = note['author']['username']
+        is_time_spent, amount = is_time_spent_message(body)
+        gitlab_id = note['id']
+        if is_time_spent:
+            user = User.objects.filter(username=author)
+            if user.count() == 0:
+                print(f"Error, unknown user {author} logged time, repo id {repo.gitlab_id}")
+                if author not in new_users:
+                    new_users.append(author)
+                continue
+            if TimeSpent.objects.filter(gitlab_id=gitlab_id).count() == 0:
+                user = user.first()
+                created_at = note['created_at']
+                issue = Issue.objects.filter(gitlab_id=id).first()
+                time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
+        else:
+            print(f"Unknown message with content {body}")
+    return repo
 
-        # Load all time spent
-        time_spents = []
 
-        for issue, id in issues_to_refresh:
-            endpoint_part = f"/projects/{repo.gitlab_id}/issues/{issue}/notes"
-            counter = 1
-            while True:
-                url = base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)
-                answer = requests.get(url).json()
-                time_spents += [(id, x) for x in answer]
-                if len(answer) < 100:
-                    break
-                counter += 1
-        for id, note in time_spents:
-            body = note['body']
-            author = note['author']['username']
-            is_time_spent, amount = is_time_spent_message(body)
-            gitlab_id = note['id']
-            if is_time_spent:
-                user = User.objects.filter(username=author)
-                if user.count() == 0:
-                    print(f"Error, unknown user {author} logged time, repo id {repo.gitlab_id}")
-                    continue
-                if TimeSpent.objects.filter(gitlab_id=gitlab_id).count() == 0:
-                    user = user.first()
-                    created_at = note['created_at']
-                    issue = Issue.objects.filter(gitlab_id=id).first()
-                    time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
-            else:
-                print(f"Unknown message with content {body}")
-
+class RepositoryUpdateView(views.APIView):
+    def get(self, request, id):
+        # TODO: add validation
+        repo = update_repository(id, request.user, [])
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
+
+
+class ProjectGroupUpdateView(views.APIView):
+    def get(self, request, id):
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        repos = []
+        new_users = []
+        for project in project_group.project_set.all():
+            for repository in project.repository_set.all():
+                repos.append(repository.pk)
+        for i, repo in enumerate(repos):
+            update_repository(repo, request.user, new_users)
+            print(f"{100 * i / len(repos)}% done refreshing repos")
+        print(new_users)
+        return JsonResponse({200: "OK", "data": ProjectGroupSerializer(project_group).data})

@@ -3,7 +3,7 @@ from rest_framework import routers
 
 from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, ProjectsView, RepositoryView, \
     GradeCategoryView, ProjectGroupGradingView, ProjectGradesView, RootAddUsers, MockAccounts, GradeUserView, \
-    RepositoryUpdateView
+    RepositoryUpdateView, ProjectGroupUpdateView
 
 router = routers.DefaultRouter()
 
@@ -20,5 +20,6 @@ urlpatterns = [
     path("accounts/mock/", MockAccounts.as_view(), name="mock_accounts"),
     path("users/<user_id>/grade/<grade_id>/", GradeUserView.as_view(), name="grade_user"),
     path("repositories/<id>/update/", RepositoryUpdateView.as_view(), name="update_repository"),
+    path("projects/<id>/update/", ProjectGroupUpdateView.as_view(), name="update_project_group"),
     path('', include(router.urls)),
 ]
