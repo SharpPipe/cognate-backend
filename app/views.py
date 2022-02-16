@@ -282,15 +282,30 @@ class RepositoryUpdateView(views.APIView):
         repo = Repository.objects.filter(pk=id).first()
         base_url = "https://gitlab.cs.ttu.ee"
         api_part = "/api/v4"
+        token_part = f"?private_token={request.user.profile.gitlab_token}&per_page=100"
 
-
+        # Load all milestones
         endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
-        token_part = f"?private_token={request.user.profile.gitlab_token}"
         answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
         for milestone in answer:
             gitlab_id = milestone["id"]
             if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
                 Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
                 print(f"Created milestone {milestone['title']}")
+
+        # Load all issues
+        issues = []
+        endpoint_part = f"/projects/{repo.gitlab_id}/issues"
+        counter = 1
+        while True:
+            answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
+            issues += answer
+            if len(answer) < 100:
+                break
+            counter += 1
+        for issue in issues:
+            print(issue)
+            print()
+        print(len(issues))
 
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
