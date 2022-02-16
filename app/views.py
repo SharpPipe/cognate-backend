@@ -82,9 +82,9 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 "id": project["id"],
                 "url": project["web_url"]
             })
-            if Project.objects.filter(gitlab_id=project["id"]).count() > 0:
+            if Repository.objects.filter(gitlab_id=project["id"]).count() > 0:
                 continue
-            project_object = Project.objects.create(gitlab_id=project["id"], name=project["name_with_namespace"], project_group=group)
+            project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
             members = [member["username"] for member in get_members_from_repo(repo, request.user)]
             for user in User.objects.filter(username__in=members).all():

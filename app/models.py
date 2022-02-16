@@ -28,9 +28,11 @@ class ProjectGroup(models.Model):
 
 
 class Project(models.Model):
-    gitlab_id = models.IntegerField()
     name = models.CharField(max_length=255, null=True, blank=True)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return self.name
 
 
 class Repository(models.Model):
