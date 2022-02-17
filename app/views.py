@@ -8,9 +8,9 @@ from django.http import JsonResponse
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, IssueMilestone, TimeSpent
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
-    RegisterSerializer, GradeCategorySerializerWithGrades
+    RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer
 
 
 def get_members_from_repo(repo, user):
@@ -24,7 +24,7 @@ def get_members_from_repo(repo, user):
 
 
 def add_user_grade_recursive(user_project, category):
-    UserGrade.objects.create(amount=0, user_project=user_project, grade_component=category)
+    UserGrade.objects.create(amount=0, user_project=user_project, grade_category=category)
     for child in category.children.all():
         add_user_grade_recursive(user_project, child)
 
@@ -62,7 +62,8 @@ class ProjectGroupLoadProjectsView(views.APIView):
         base_url = "https://gitlab.cs.ttu.ee"
         api_part = "/api/v4"
         endpoint_part = f"/groups/{group.group_id}/projects"
-        token_part = f"?private_token={profile.gitlab_token}"
+        token_part = f"?private_token={profile.gitlab_token}&per_page=100"
+        # TODO: Theoretically there is a chance that there are more than 100 projects per group
 
         answer = requests.get(base_url + api_part + endpoint_part + token_part)
         print(f"Got response")
@@ -81,10 +82,15 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 "id": project["id"],
                 "url": project["web_url"]
             })
+            if Repository.objects.filter(gitlab_id=project["id"]).count() > 0:
+                continue
             project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
             members = [member["username"] for member in get_members_from_repo(repo, request.user)]
             for user in User.objects.filter(username__in=members).all():
+                rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
+                if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
+                    continue
                 user_project = UserProject.objects.create(rights="M", account=user, project=project_object)
                 add_user_grade(user_project, group)
 
@@ -242,12 +248,34 @@ class MockAccounts(views.APIView):
         return JsonResponse([x.id for x in accounts], safe=False)
 
 
+def pick_user_grade(query):
+    options = query.all()
+    order = ["M", "A", "P"]
+    for target_type in order:
+        for option in options:
+            if option.grade_type == target_type:
+                return option
+
+
 class GradeUserView(views.APIView):
     def post(self, request, user_id, grade_id):
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
-        user = User.objects.filter(pk=user_id).first()
+        user_project = UserProject.objects.filter(pk=user_id).first()
         grade = GradeCategory.objects.filter(pk=grade_id).first()
-        user_grade = UserGrade.objects.create(amount=request.data["amount"], account=user, grade_component=grade)
+        search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade)
+
+        added_data = False
+        for old_grade in search.all():
+            if old_grade.grade_type == "P":
+                old_grade.delete()
+            elif old_grade.grade_type == "M":
+                old_grade.amount = request.data["amount"]
+                old_grade.save()
+                added_data = True
+            elif old_grade.grade_type == "A":
+                pass
+        if not added_data:
+            new_grade = UserGrade.objects.create(amount=request.data["amount"], user_project=user_project, grade_category=grade, grade_type="M")
 
         parent = grade.parent_category
         while parent is not None:
@@ -265,27 +293,205 @@ class GradeUserView(views.APIView):
             if modify:
                 children = parent.children
                 children_total_potential = func([c.total for c in children])
-                children_total_value = func([UserGrade.objects.filter(account=user).filter(grade_component=c).first().amount for c in children])
-                parent_grade = UserGrade.objects.filter(account=user).filter(grade_component=parent).first()
+                children_total_value = func([pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=c)).amount for c in children])
+
+                # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
+                parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent).first()
                 parent_grade.amount = parent.total * children_total_value / children_total_potential
                 parent_grade.save()
+            else:
+                break
 
             grade = parent
             parent = grade.parent_category
         return JsonResponse({200: "OK"})
 
 
+available_times = {
+    "m": 1,
+    "h": 60,
+    "d": 480,
+    "w": 2400
+}
+
+
+def minute_amount(message):
+    at_numbers = True
+    number_part = ''
+    letter_part = ''
+    for letter in message:
+        if letter.isdigit():
+            if not at_numbers:
+                return False
+            number_part += letter
+        else:
+            at_numbers = False
+            letter_part += letter
+    if len(number_part) == 0 or len(number_part) == 0:
+        return False
+    number = int(number_part)
+    if letter_part not in available_times.keys():
+        return False
+    return number * available_times[letter_part]
+
+
+def is_time_spent_message(message):
+    if "added " not in message:
+        return False, 0
+    message = message.split("added ")[1]
+    if " of time spent" not in message:
+        return False, 0
+    message = message.split(" of time spent")[0]
+    parts = [minute_amount(x) for x in message.split(" ")]
+    if False in parts:
+        return False, 0
+    return True, sum(parts)
+
+
+def update_repository(id, user, new_users):
+    repo = Repository.objects.filter(pk=id).first()
+    base_url = "https://gitlab.cs.ttu.ee"
+    api_part = "/api/v4"
+    token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
+
+    # Load all milestones
+    endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
+    answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+    for milestone in answer:
+        gitlab_id = milestone["id"]
+        if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
+            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
+            print(f"Created milestone {milestone['title']}")
+
+    # Load all issues
+    issues = []
+    endpoint_part = f"/projects/{repo.gitlab_id}/issues"
+    counter = 1
+    issues_to_refresh = []
+    while True:
+        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
+        issues += answer
+        if len(answer) < 100:
+            break
+        counter += 1
+    for issue in issues:
+        gitlab_id = issue['id']
+        gitlab_iid = issue['iid']
+        title = issue['title']
+        milestone = issue['milestone']
+        issues_to_refresh.append((gitlab_iid, gitlab_id))
+        if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
+            issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
+            if milestone is not None:
+                IssueMilestone.objects.create(issue=issue_object, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
+                pass
+
+    # Load all time spent
+    time_spents = []
+
+    for issue, id in issues_to_refresh:
+        endpoint_part = f"/projects/{repo.gitlab_id}/issues/{issue}/notes"
+        counter = 1
+        while True:
+            url = base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)
+            answer = requests.get(url).json()
+            time_spents += [(id, x) for x in answer]
+            if len(answer) < 100:
+                break
+            counter += 1
+    for id, note in time_spents:
+        body = note['body']
+        author = note['author']['username']
+        is_time_spent, amount = is_time_spent_message(body)
+        gitlab_id = note['id']
+        if is_time_spent:
+            user = User.objects.filter(username=author)
+            if user.count() == 0:
+                print(f"Error, unknown user {author} logged time, repo id {repo.gitlab_id}")
+                if author not in new_users:
+                    new_users.append(author)
+                continue
+            if TimeSpent.objects.filter(gitlab_id=gitlab_id).count() == 0:
+                user = user.first()
+                created_at = note['created_at']
+                issue = Issue.objects.filter(gitlab_id=id).first()
+                time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
+        else:
+            print(f"Unknown message with content {body}")
+    return repo
+
+
 class RepositoryUpdateView(views.APIView):
     def get(self, request, id):
         # TODO: add validation
-        repo = Repository.objects.filter(pk=id).first()
-        base_url = "https://gitlab.cs.ttu.ee"
-        api_part = "/api/v4"
-
-
-        endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
-        token_part = f"?private_token={request.user.profile.gitlab_token}"
-        answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
-        print(answer)
-
+        repo = update_repository(id, request.user, [])
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
+
+
+class ProjectGroupUpdateView(views.APIView):
+    def get(self, request, id):
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        repos = []
+        new_users = []
+        for project in project_group.project_set.all():
+            for repository in project.repository_set.all():
+                repos.append(repository.pk)
+        for i, repo in enumerate(repos):
+            update_repository(repo, request.user, new_users)
+            print(f"{100 * i / len(repos)}% done refreshing repos")
+        print(new_users)
+        return JsonResponse({200: "OK", "data": ProjectGroupSerializer(project_group).data})
+
+
+class ProjectMilestonesView(views.APIView):
+    def get(self, request, id):
+        project = Project.objects.filter(pk=id).first()
+        milestones = Milestone.objects.filter(repository__project=project)
+        return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
+
+
+class ProjectMilestoneDataView(views.APIView):
+    def get(self, request, id, milestone_id):
+        # TODO: Use milestone id to pick milestone
+        project = Project.objects.filter(pk=id).first()
+        milestone = None
+        for test_milestone in GradeMilestone.objects.all():
+            root_category = test_milestone.grade_category
+            while root_category.parent_category is not None:
+                root_category = root_category.parent_category
+            if project.project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+                milestone = test_milestone
+                break
+
+        promised_json = {}
+
+        user_projects = UserProject.objects.filter(project=project).all()
+        for user_project in user_projects:
+            print(user_project.account.username)
+            user_list = []
+            promised_json[user_project.account.username] = user_list
+            for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
+                category_data = {}
+                user_list.append(category_data)
+                user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
+                # category_data["id"] = .first().pk
+                category_data["name"] = grade_category.name
+                category_data["total"] = grade_category.total
+                category_data["automatic_points"] = None
+                category_data["given_points"] = None
+
+                for user_grade in user_grades.all():
+                    if user_grade.grade_type == "P":
+                        category_data["id"] = user_grade.pk
+                for user_grade in user_grades.all():
+                    if user_grade.grade_type == "A":
+                        category_data["id"] = user_grade.pk
+                        category_data["automatic_points"] = user_grade.amount
+                for user_grade in user_grades.all():
+                    if user_grade.grade_type == "M":
+                        category_data["id"] = user_grade.pk
+                        category_data["given_points"] = user_grade.amount
+                print(grade_category.name)
+            print()
+
+        return JsonResponse({200: "OK", "data": promised_json})
