@@ -3,7 +3,8 @@ from rest_framework import routers
 
 from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, ProjectsView, RepositoryView, \
     GradeCategoryView, ProjectGroupGradingView, ProjectGradesView, RootAddUsers, MockAccounts, GradeUserView, \
-    RepositoryUpdateView, ProjectGroupUpdateView, ProjectMilestonesView, ProjectMilestoneDataView
+    RepositoryUpdateView, ProjectGroupUpdateView, ProjectMilestonesView, ProjectMilestoneDataView, \
+    ProjectMilestoneTimeSpentView
 
 router = routers.DefaultRouter()
 
@@ -23,5 +24,6 @@ urlpatterns = [
     path("projects/<id>/update/", ProjectGroupUpdateView.as_view(), name="update_project_group"),
     path("projects/<id>/milestones/", ProjectMilestonesView.as_view(), name="project_milestones"),
     path("projects/<id>/milestone/<milestone_id>", ProjectMilestoneDataView.as_view(), name="project_milestone_data"),
+    path("projects/<id>/milestone/<milestone_id>/time_spent", ProjectMilestoneTimeSpentView.as_view(), name="project_milestone_time_spent"),
     path('', include(router.urls)),
 ]
