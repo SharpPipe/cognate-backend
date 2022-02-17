@@ -492,14 +492,16 @@ class ProjectMilestoneDataView(views.APIView):
                 category_data["given_points"] = None
                 category_data["id"] = grade_category.pk
 
+                times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
+                total_time = sum([time_spend.amount for time_spend in times_spent]) / 60
+                category_data["spent_time"] = total_time
+
                 if user_grades.filter(grade_type="A").count() == 0:
                     automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
                     if automate_grade.count() > 0:
                         automate_grade = automate_grade.first()
                         if automate_grade.automation_type == "T":
-                            times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
-                            total_time = sum([time_spend.amount for time_spend in times_spent])
-                            percent_done = min(1, total_time / 60 / automate_grade.amount_needed)
+                            percent_done = min(1, total_time / automate_grade.amount_needed)
                             points = decimal.Decimal(percent_done) * grade_category.total
                             UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project, grade_category=grade_category)
                             user_grades.filter(grade_type="P").delete()
