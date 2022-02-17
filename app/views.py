@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer
 
@@ -551,4 +551,10 @@ class BulkGradeView(views.APIView):
         print(request.data)
         for sub_grade in request.data:
             grade_user(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
+        return JsonResponse({200: "OK"})
+
+
+class FeedbackView(views.APIView):
+    def post(self, request):
+        Feedback.objects.create(text=request.data["feedback"])
         return JsonResponse({200: "OK"})
