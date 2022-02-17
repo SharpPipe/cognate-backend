@@ -419,6 +419,10 @@ def update_repository(id, user, new_users):
                 time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
         else:
             print(f"Unknown message with content {body}")
+
+    # Load all commits
+    # TODO: Load commit data
+
     return repo
 
 
@@ -465,7 +469,6 @@ class ProjectMilestoneDataView(views.APIView):
                 break
 
         promised_json = {}
-        print(milestone)
 
         user_projects = UserProject.objects.filter(project=project).all()
         for user_project in user_projects:
@@ -505,3 +508,32 @@ class ProjectMilestoneDataView(views.APIView):
             print()
 
         return JsonResponse({200: "OK", "data": promised_json})
+
+
+class ProjectMilestoneTimeSpentView(views.APIView):
+    def get(self, request, id, milestone_id):
+        # TODO: Use milestone id to pick milestone
+        project = Project.objects.filter(pk=id).first()
+        milestone = None
+        for test_milestone in GradeMilestone.objects.all():
+            root_category = test_milestone.grade_category
+            while root_category.parent_category is not None:
+                root_category = root_category.parent_category
+            if project.project_group == GradeCalculation.objects.filter(
+                    grade_category=root_category).first().project_group:
+                milestone = test_milestone
+                break
+
+        promised_json = []
+
+        user_projects = UserProject.objects.filter(project=project).all()
+        for user_project in user_projects:
+            times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
+            for time_spent in times_spent:
+                promised_json.append({
+                    "datetime": time_spent.time,
+                    "author": time_spent.user.username,
+                    "amount": time_spent.amount,
+                    "subject": time_spent.issue.title
+                })
+        return JsonResponse(promised_json, safe=False)
