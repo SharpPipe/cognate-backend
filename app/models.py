@@ -71,12 +71,24 @@ class GradeCategory(models.Model):
         SUM = ("S", "Sum")  # Grade is sum of children, then scaled using total
         MAX = ("M", "Max")  # Grade is max of children, then scaled using total
         MIN = ("I", "Min")  # Grade is max of children, then scaled using total
+        AUTOMATIC = ("A", "Automatic")  # Comes from script, also has an AutomateGrade object tied to it
 
     name = models.CharField(max_length=200, null=True, blank=True)
     total = models.DecimalField(max_digits=100, decimal_places=5, default=1.0)
     grade_type = models.CharField(max_length=1, choices=GradeType.choices, default=GradeType.CUSTOM)
     description = models.TextField(null=True, blank=True)
     parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
+
+
+class AutomateGrade(models.Model):
+    class AutomationType(models.TextChoices):
+        RANDOM = ("R", "Random")  # A random value between 0 and 1 is given
+        TIME_SPENT = ("T", "Time spent")
+        LINES_ADDED = ("L", "Lines added")  # Is actually the difference in lines, so added - removed
+
+    automation_type = models.CharField(max_length=1, choices=AutomationType.choices, default=AutomationType.RANDOM)
+    amount_needed = models.IntegerField()
+    grade_category = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
 
 
 class GradeMilestone(models.Model):
@@ -134,7 +146,7 @@ class UserGrade(models.Model):
     grade_type = models.CharField(max_length=1, choices=UserGradeType.choices, default=UserGradeType.PLACEHOLDER)
     amount = models.DecimalField(max_digits=100, decimal_places=5)
     user_project = models.ForeignKey(UserProject, on_delete=models.CASCADE, null=True, blank=True)
-    grade_component = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
+    grade_category = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
 
 
 

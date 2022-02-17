@@ -24,7 +24,7 @@ def get_members_from_repo(repo, user):
 
 
 def add_user_grade_recursive(user_project, category):
-    UserGrade.objects.create(amount=0, user_project=user_project, grade_component=category)
+    UserGrade.objects.create(amount=0, user_project=user_project, grade_category=category)
     for child in category.children.all():
         add_user_grade_recursive(user_project, child)
 
@@ -262,7 +262,7 @@ class GradeUserView(views.APIView):
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
         user_project = UserProject.objects.filter(pk=user_id).first()
         grade = GradeCategory.objects.filter(pk=grade_id).first()
-        search = UserGrade.objects.filter(user_project=user_project).filter(grade_component=grade)
+        search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade)
 
         added_data = False
         for old_grade in search.all():
@@ -275,7 +275,7 @@ class GradeUserView(views.APIView):
             elif old_grade.grade_type == "A":
                 pass
         if not added_data:
-            new_grade = UserGrade.objects.create(amount=request.data["amount"], user_project=user_project, grade_component=grade, grade_type="M")
+            new_grade = UserGrade.objects.create(amount=request.data["amount"], user_project=user_project, grade_category=grade, grade_type="M")
 
         parent = grade.parent_category
         while parent is not None:
@@ -293,10 +293,10 @@ class GradeUserView(views.APIView):
             if modify:
                 children = parent.children
                 children_total_potential = func([c.total for c in children])
-                children_total_value = func([pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_component=c)).amount for c in children])
+                children_total_value = func([pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=c)).amount for c in children])
 
                 # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
-                parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_component=parent).first()
+                parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent).first()
                 parent_grade.amount = parent.total * children_total_value / children_total_potential
                 parent_grade.save()
             else:
@@ -448,3 +448,50 @@ class ProjectMilestonesView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         milestones = Milestone.objects.filter(repository__project=project)
         return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
+
+
+class ProjectMilestoneDataView(views.APIView):
+    def get(self, request, id, milestone_id):
+        # TODO: Use milestone id to pick milestone
+        project = Project.objects.filter(pk=id).first()
+        milestone = None
+        for test_milestone in GradeMilestone.objects.all():
+            root_category = test_milestone.grade_category
+            while root_category.parent_category is not None:
+                root_category = root_category.parent_category
+            if project.project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+                milestone = test_milestone
+                break
+
+        promised_json = {}
+
+        user_projects = UserProject.objects.filter(project=project).all()
+        for user_project in user_projects:
+            print(user_project.account.username)
+            user_list = []
+            promised_json[user_project.account.username] = user_list
+            for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
+                category_data = {}
+                user_list.append(category_data)
+                user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
+                # category_data["id"] = .first().pk
+                category_data["name"] = grade_category.name
+                category_data["total"] = grade_category.total
+                category_data["automatic_points"] = None
+                category_data["given_points"] = None
+
+                for user_grade in user_grades.all():
+                    if user_grade.grade_type == "P":
+                        category_data["id"] = user_grade.pk
+                for user_grade in user_grades.all():
+                    if user_grade.grade_type == "A":
+                        category_data["id"] = user_grade.pk
+                        category_data["automatic_points"] = user_grade.amount
+                for user_grade in user_grades.all():
+                    if user_grade.grade_type == "M":
+                        category_data["id"] = user_grade.pk
+                        category_data["given_points"] = user_grade.amount
+                print(grade_category.name)
+            print()
+
+        return JsonResponse({200: "OK", "data": promised_json})
