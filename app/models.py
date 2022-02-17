@@ -148,4 +148,8 @@ class UserGrade(models.Model):
     grade_category = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
 
 
+class Feedback(models.Model):
+    text = models.TextField(null=True, blank=True)
+
+
 
