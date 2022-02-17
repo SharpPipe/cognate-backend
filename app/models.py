@@ -108,11 +108,7 @@ class Issue(models.Model):
     gitlab_id = models.IntegerField()
     title = models.TextField(null=True, blank=True)
     gitlab_iid = models.IntegerField()
-
-
-class IssueMilestone(models.Model):
-    issue = models.ForeignKey(Issue, on_delete=models.CASCADE)
-    milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE)
+    milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="issues", null=True, blank=True)
 
 
 class TimeSpent(models.Model):
