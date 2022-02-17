@@ -514,7 +514,7 @@ class ProjectMilestoneDataView(views.APIView):
                 print(grade_category.name)
             print()
 
-        return JsonResponse({200: "OK", "data": promised_json})
+        return JsonResponse(promised_json)
 
 
 class ProjectMilestoneTimeSpentView(views.APIView):
