@@ -481,7 +481,14 @@ class ProjectMilestoneDataView(views.APIView):
         for user_project in user_projects:
             print(user_project.account.username)
             user_list = []
-            promised_json.append({"username": user_project.account.username, "id": user_project.pk, "data": user_list})
+            times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
+            total_time = sum([time_spend.amount for time_spend in times_spent]) / 60
+            promised_json.append({
+                "username": user_project.account.username,
+                "id": user_project.pk,
+                "spent_time": total_time,
+                "data": user_list
+            })
             for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
                 category_data = {}
                 user_list.append(category_data)
@@ -497,9 +504,7 @@ class ProjectMilestoneDataView(views.APIView):
                     if automate_grade.count() > 0:
                         automate_grade = automate_grade.first()
                         if automate_grade.automation_type == "T":
-                            times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
-                            total_time = sum([time_spend.amount for time_spend in times_spent])
-                            percent_done = total_time / 60 / automate_grade.amount_needed
+                            percent_done = min(1, total_time / automate_grade.amount_needed)
                             points = decimal.Decimal(percent_done) * grade_category.total
                             UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project, grade_category=grade_category)
                             user_grades.filter(grade_type="P").delete()
