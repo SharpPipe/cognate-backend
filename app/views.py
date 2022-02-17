@@ -1,3 +1,4 @@
+import decimal
 import string
 
 import requests
@@ -8,7 +9,7 @@ from django.http import JsonResponse
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, Issue, IssueMilestone, TimeSpent
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer
 
@@ -381,10 +382,10 @@ def update_repository(id, user, new_users):
         milestone = issue['milestone']
         issues_to_refresh.append((gitlab_iid, gitlab_id))
         if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
-            issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
             if milestone is not None:
-                IssueMilestone.objects.create(issue=issue_object, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
-                pass
+                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
+            else:
+                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
 
     # Load all time spent
     time_spents = []
@@ -464,6 +465,7 @@ class ProjectMilestoneDataView(views.APIView):
                 break
 
         promised_json = {}
+        print(milestone)
 
         user_projects = UserProject.objects.filter(project=project).all()
         for user_project in user_projects:
@@ -474,11 +476,22 @@ class ProjectMilestoneDataView(views.APIView):
                 category_data = {}
                 user_list.append(category_data)
                 user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
-                # category_data["id"] = .first().pk
                 category_data["name"] = grade_category.name
                 category_data["total"] = grade_category.total
                 category_data["automatic_points"] = None
                 category_data["given_points"] = None
+
+                if user_grades.filter(grade_type="A").count() == 0:
+                    automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
+                    if automate_grade.count() > 0:
+                        automate_grade = automate_grade.first()
+                        if automate_grade.automation_type == "T":
+                            times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
+                            total_time = sum([time_spend.amount for time_spend in times_spent])
+                            percent_done = total_time / 60 / automate_grade.amount_needed
+                            points = decimal.Decimal(percent_done) * grade_category.total
+                            UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project, grade_category=grade_category)
+                            user_grades.filter(grade_type="P").delete()
 
                 for user_grade in user_grades.all():
                     if user_grade.grade_type == "P":
@@ -491,6 +504,7 @@ class ProjectMilestoneDataView(views.APIView):
                     if user_grade.grade_type == "M":
                         category_data["id"] = user_grade.pk
                         category_data["given_points"] = user_grade.amount
+
                 print(grade_category.name)
             print()
 
