@@ -293,8 +293,8 @@ class GradeUserView(views.APIView):
 
             if modify:
                 children = parent.children
-                children_total_potential = func([c.total for c in children])
-                children_total_value = func([pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=c)).amount for c in children])
+                children_total_potential = func([c.total for c in children.all()])
+                children_total_value = func([pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=c)).amount for c in children.all()])
 
                 # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
                 parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent).first()
@@ -471,7 +471,7 @@ class ProjectMilestoneDataView(views.APIView):
         for user_project in user_projects:
             print(user_project.account.username)
             user_list = []
-            promised_json[user_project.account.username] = user_list
+            promised_json[user_project.account.username] = {"id": user_project.pk, "data": user_list}
             for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
                 category_data = {}
                 user_list.append(category_data)
@@ -480,6 +480,7 @@ class ProjectMilestoneDataView(views.APIView):
                 category_data["total"] = grade_category.total
                 category_data["automatic_points"] = None
                 category_data["given_points"] = None
+                category_data["id"] = grade_category.pk
 
                 if user_grades.filter(grade_type="A").count() == 0:
                     automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
@@ -494,15 +495,10 @@ class ProjectMilestoneDataView(views.APIView):
                             user_grades.filter(grade_type="P").delete()
 
                 for user_grade in user_grades.all():
-                    if user_grade.grade_type == "P":
-                        category_data["id"] = user_grade.pk
-                for user_grade in user_grades.all():
                     if user_grade.grade_type == "A":
-                        category_data["id"] = user_grade.pk
                         category_data["automatic_points"] = user_grade.amount
                 for user_grade in user_grades.all():
                     if user_grade.grade_type == "M":
-                        category_data["id"] = user_grade.pk
                         category_data["given_points"] = user_grade.amount
 
                 print(grade_category.name)
