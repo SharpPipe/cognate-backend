@@ -475,13 +475,13 @@ class ProjectMilestoneDataView(views.APIView):
                 milestone = test_milestone
                 break
 
-        promised_json = {}
+        promised_json = []
 
         user_projects = UserProject.objects.filter(project=project).all()
         for user_project in user_projects:
             print(user_project.account.username)
             user_list = []
-            promised_json[user_project.account.username] = {"id": user_project.pk, "data": user_list}
+            promised_json.append({"username": user_project.account.username, "id": user_project.pk, "data": user_list})
             for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
                 category_data = {}
                 user_list.append(category_data)
@@ -514,7 +514,7 @@ class ProjectMilestoneDataView(views.APIView):
                 print(grade_category.name)
             print()
 
-        return JsonResponse(promised_json)
+        return JsonResponse({200: "OK", "data": promised_json})
 
 
 class ProjectMilestoneTimeSpentView(views.APIView):
