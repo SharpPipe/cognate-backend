@@ -14,11 +14,12 @@ from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySe
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer
 
 
-def get_members_from_repo(repo, user):
+def get_members_from_repo(repo, user, get_all):
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
-    endpoint_part = f"/projects/{repo.gitlab_id}/members/all"
+    endpoint_part = f"/projects/{repo.gitlab_id}/members" + ("/all" if get_all else "")
     token_part = f"?private_token={user.profile.gitlab_token}"
+    print(token_part)
 
     answer = requests.get(base_url + api_part + endpoint_part + token_part)
     return answer.json()
@@ -87,7 +88,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 continue
             project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
-            members = [member["username"] for member in get_members_from_repo(repo, request.user)]
+            members = [member["username"] for member in get_members_from_repo(repo, request.user, True)]
             for user in User.objects.filter(username__in=members).all():
                 rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
@@ -240,7 +241,7 @@ class RootAddUsers(views.APIView):
         for project in projects:
             users_found = []
             for repo in project.repository_set.all():
-                answer_json = get_members_from_repo(repo, request.user)
+                answer_json = get_members_from_repo(repo, request.user, False)
                 print(answer_json)
                 for member in answer_json:
                     for user in user_objects:
@@ -377,13 +378,12 @@ def update_repository(id, user, new_users):
     token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
 
     # Refresh users
-    answer_json = get_members_from_repo(repo, user)
+    answer_json = get_members_from_repo(repo, user, False)
     print(answer_json)
     user_objects = []
     for member in answer_json:
-        if member['access_level'] == 40:
-            create_user(member['username'], user_objects)
-            print(f"{member['username']}")
+        create_user(member['username'], user_objects)
+        print(f"{member['username']}")
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
             user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
