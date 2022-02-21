@@ -225,12 +225,15 @@ class RootAddUsers(views.APIView):
             user_objects.append(user_object)
 
         project_group = ProjectGroup.objects.filter(pk=id).first()
+        print(project_group)
         projects = Project.objects.filter(project_group=project_group)
+        print(projects)
         grade_category_root = project_group.grade_calculation.grade_category
         for project in projects:
             users_found = []
             for repo in project.repository_set.all():
                 answer_json = get_members_from_repo(repo, request.user)
+                print(answer_json)
                 for member in answer_json:
                     for user in user_objects:
                         if user.username in users_found:
@@ -365,6 +368,7 @@ def update_repository(id, user, new_users):
     # Load all milestones
     endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
     answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+    print(answer)
     for milestone in answer:
         gitlab_id = milestone["id"]
         if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
@@ -476,8 +480,10 @@ class ProjectMilestoneDataView(views.APIView):
                 break
 
         promised_json = []
+        print(milestone)
 
         user_projects = UserProject.objects.filter(project=project).all()
+        print(user_projects)
         for user_project in user_projects:
             print(user_project.account.username)
             user_list = []
