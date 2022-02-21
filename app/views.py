@@ -198,6 +198,30 @@ class ProjectGradesView(views.APIView):
         return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
 
 
+def create_user(username, user_objects):
+    users = User.objects.filter(username=username)
+    if users.count() > 0:
+        user_objects.append(users.first())
+        return
+    email = username + "@ttu.ee"
+    sub_data = {}
+    sub_data["username"] = username
+    sub_data["email"] = email
+    sub_data["password"] = "".join([random.choice(string.ascii_lowercase) for _ in range(20)])
+    sub_data["password_confirm"] = sub_data["password"]
+    if "." in username:
+        sub_data["first_name"] = username.split(".")[0]
+        sub_data["last_name"] = ".".join(username.split(".")[1:])
+    else:
+        sub_data["first_name"] = username[:len(username) // 2]
+        sub_data["last_name"] = username[len(username) // 2:]
+    serializer = RegisterSerializer(data=sub_data)
+    serializer.is_valid()
+    user_object = serializer.save()
+    Profile.objects.create(user=user_object, actual_account=False)
+    user_objects.append(user_object)
+
+
 class RootAddUsers(views.APIView):
     def post(self, request, id):
         if not request.user.is_superuser:
@@ -206,23 +230,7 @@ class RootAddUsers(views.APIView):
         users = request.data["data"]
         user_objects = []
         for user in users:
-            email = user + "@ttu.ee"
-            sub_data = {}
-            sub_data["username"] = user
-            sub_data["email"] = email
-            sub_data["password"] = "".join([random.choice(string.ascii_lowercase) for _ in range(20)])
-            sub_data["password_confirm"] = sub_data["password"]
-            if "." in user:
-                sub_data["first_name"] = user.split(".")[0]
-                sub_data["last_name"] = ".".join(user.split(".")[1:])
-            else:
-                sub_data["first_name"] = user[:len(user) // 2]
-                sub_data["last_name"] = user[len(user) // 2:]
-            serializer = RegisterSerializer(data=sub_data)
-            serializer.is_valid()
-            user_object = serializer.save()
-            Profile.objects.create(user=user_object, actual_account=False)
-            user_objects.append(user_object)
+            create_user(user, user_objects)
 
         project_group = ProjectGroup.objects.filter(pk=id).first()
         print(project_group)
@@ -239,10 +247,11 @@ class RootAddUsers(views.APIView):
                         if user.username in users_found:
                             continue
                         if member["username"] == user.username:
-                            user_project = UserProject.objects.create(rights="M", account=user, project=project)
-                            add_user_grade_recursive(user_project, grade_category_root)
-                            users_found.append(user.username)
-                            print(f"{member['username']} found in project {project.name}")
+                            if UserProject.objects.filter(account=user).filter(project=project).count() == 0:
+                                user_project = UserProject.objects.create(rights="M", account=user, project=project)
+                                add_user_grade_recursive(user_project, grade_category_root)
+                                users_found.append(user.username)
+                                print(f"{member['username']} found in project {project.name}")
         return JsonResponse({200: "OK"})
 
 
@@ -361,9 +370,24 @@ def is_time_spent_message(message):
 
 def update_repository(id, user, new_users):
     repo = Repository.objects.filter(pk=id).first()
+    project = repo.project
+    grade_category_root = project.project_group.grade_calculation.grade_category
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
     token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
+
+    # Refresh users
+    answer_json = get_members_from_repo(repo, user)
+    print(answer_json)
+    user_objects = []
+    for member in answer_json:
+        if member['access_level'] == 40:
+            create_user(member['username'], user_objects)
+            print(f"{member['username']}")
+    for user_object in user_objects:
+        if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
+            user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
+            add_user_grade_recursive(user_project, grade_category_root)
 
     # Load all milestones
     endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
@@ -455,7 +479,7 @@ class ProjectGroupUpdateView(views.APIView):
         for i, repo in enumerate(repos):
             update_repository(repo, request.user, new_users)
             print(f"{100 * i / len(repos)}% done refreshing repos")
-        print(new_users)
+        print(f"Added users {new_users}")
         return JsonResponse({200: "OK", "data": ProjectGroupSerializer(project_group).data})
 
 
