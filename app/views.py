@@ -549,7 +549,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
 
             print(grade_category.name)
         print()
-        return {"project_name": project.name, "project_data": promised_json}
+    return {"project_name": project.name, "project_data": promised_json}
 
 
 class GroupSummaryMilestoneDataView(views.APIView):
