@@ -490,66 +490,80 @@ class ProjectMilestonesView(views.APIView):
         return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
 
 
+def get_milestone_data_for_project(request, id, milestone_id):
+    # TODO: Use milestone id to pick milestone
+    project = Project.objects.filter(pk=id).first()
+    milestone = None
+    for test_milestone in GradeMilestone.objects.all():
+        root_category = test_milestone.grade_category
+        while root_category.parent_category is not None:
+            root_category = root_category.parent_category
+        if project.project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+            milestone = test_milestone
+            break
+
+    promised_json = []
+    print(milestone)
+
+    user_projects = UserProject.objects.filter(project=project).all()
+    print(user_projects)
+    for user_project in user_projects:
+        print(user_project.account.username)
+        user_list = []
+        times_spent = TimeSpent.objects.filter(user=user_project.account).filter(
+            issue__milestone__grade_milestone=milestone).all()
+        total_time = sum([time_spend.amount for time_spend in times_spent]) / 60
+        promised_json.append({
+            "username": user_project.account.username,
+            "id": user_project.pk,
+            "spent_time": total_time,
+            "data": user_list
+        })
+        for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
+            category_data = {}
+            user_list.append(category_data)
+            user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
+            category_data["name"] = grade_category.name
+            category_data["total"] = grade_category.total
+            category_data["automatic_points"] = None
+            category_data["given_points"] = None
+            category_data["id"] = grade_category.pk
+
+            if user_grades.filter(grade_type="A").count() == 0:
+                automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
+                if automate_grade.count() > 0:
+                    automate_grade = automate_grade.first()
+                    if automate_grade.automation_type == "T":
+                        percent_done = min(1, total_time / automate_grade.amount_needed)
+                        points = decimal.Decimal(percent_done) * grade_category.total
+                        UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project,
+                                                 grade_category=grade_category)
+                        user_grades.filter(grade_type="P").delete()
+
+            for user_grade in user_grades.all():
+                if user_grade.grade_type == "A":
+                    category_data["automatic_points"] = user_grade.amount
+            for user_grade in user_grades.all():
+                if user_grade.grade_type == "M":
+                    category_data["given_points"] = user_grade.amount
+
+            print(grade_category.name)
+        print()
+        return {"project_name": project.name, "project_data": promised_json}
+
+
+class GroupSummaryMilestoneDataView(views.APIView):
+    def get(self, request, id, milestone_id):
+        # TODO: use milestone id to pick milestone
+        data = []
+        for project in ProjectGroup.objects.filter(pk=id).first().project_set.all():
+            data.append(get_milestone_data_for_project(request, project.pk, milestone_id))
+        return JsonResponse({200: "OK", "data": data})
+
+
 class ProjectMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
-        # TODO: Use milestone id to pick milestone
-        project = Project.objects.filter(pk=id).first()
-        milestone = None
-        for test_milestone in GradeMilestone.objects.all():
-            root_category = test_milestone.grade_category
-            while root_category.parent_category is not None:
-                root_category = root_category.parent_category
-            if project.project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
-                milestone = test_milestone
-                break
-
-        promised_json = []
-        print(milestone)
-
-        user_projects = UserProject.objects.filter(project=project).all()
-        print(user_projects)
-        for user_project in user_projects:
-            print(user_project.account.username)
-            user_list = []
-            times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
-            total_time = sum([time_spend.amount for time_spend in times_spent]) / 60
-            promised_json.append({
-                "username": user_project.account.username,
-                "id": user_project.pk,
-                "spent_time": total_time,
-                "data": user_list
-            })
-            for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
-                category_data = {}
-                user_list.append(category_data)
-                user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
-                category_data["name"] = grade_category.name
-                category_data["total"] = grade_category.total
-                category_data["automatic_points"] = None
-                category_data["given_points"] = None
-                category_data["id"] = grade_category.pk
-
-                if user_grades.filter(grade_type="A").count() == 0:
-                    automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
-                    if automate_grade.count() > 0:
-                        automate_grade = automate_grade.first()
-                        if automate_grade.automation_type == "T":
-                            percent_done = min(1, total_time / automate_grade.amount_needed)
-                            points = decimal.Decimal(percent_done) * grade_category.total
-                            UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project, grade_category=grade_category)
-                            user_grades.filter(grade_type="P").delete()
-
-                for user_grade in user_grades.all():
-                    if user_grade.grade_type == "A":
-                        category_data["automatic_points"] = user_grade.amount
-                for user_grade in user_grades.all():
-                    if user_grade.grade_type == "M":
-                        category_data["given_points"] = user_grade.amount
-
-                print(grade_category.name)
-            print()
-
-        return JsonResponse({200: "OK", "data": promised_json})
+        return JsonResponse({200: "OK", "data": get_milestone_data_for_project(request, id, milestone_id)})
 
 
 class ProjectMilestoneTimeSpentView(views.APIView):
