@@ -490,17 +490,23 @@ class ProjectMilestonesView(views.APIView):
         return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
 
 
-def get_milestone_data_for_project(request, id, milestone_id):
-    # TODO: Use milestone id to pick milestone
-    project = Project.objects.filter(pk=id).first()
-    milestone = None
+def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group, milestone_id):
     for test_milestone in GradeMilestone.objects.all():
+        if test_milestone.milestone_order_id != milestone_id:
+            continue
         root_category = test_milestone.grade_category
         while root_category.parent_category is not None:
             root_category = root_category.parent_category
-        if project.project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
-            milestone = test_milestone
-            break
+        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+            return test_milestone
+
+
+def get_milestone_data_for_project(request, id, milestone_id):
+    # TODO: Use milestone id to pick milestone
+    project = Project.objects.filter(pk=id).first()
+    milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
+    if milestone is None:
+        return {"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."}
 
     promised_json = []
     print(milestone)
@@ -549,36 +555,37 @@ def get_milestone_data_for_project(request, id, milestone_id):
 
             print(grade_category.name)
         print()
-    return {"project_name": project.name, "project_data": promised_json}
+    return {"status": 200, "project_name": project.name, "project_data": promised_json}
 
 
 class GroupSummaryMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
-        # TODO: use milestone id to pick milestone
         data = []
         for project in ProjectGroup.objects.filter(pk=id).first().project_set.all():
-            data.append(get_milestone_data_for_project(request, project.pk, milestone_id))
+            project_res = get_milestone_data_for_project(request, project.pk, milestone_id)
+            if project_res["status"] == 418:
+                return JsonResponse(project_res)
+            del project_res["status"]
+            data.append(project_res)
         return JsonResponse({200: "OK", "data": data})
 
 
 class ProjectMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
-        return JsonResponse({200: "OK", "data": get_milestone_data_for_project(request, id, milestone_id)})
+        res = get_milestone_data_for_project(request, id, milestone_id)
+        if res["status"] == 418:
+            return JsonResponse(res)
+        del res["status"]
+        return JsonResponse({200: "OK", "data": res})
 
 
 class ProjectMilestoneTimeSpentView(views.APIView):
     def get(self, request, id, milestone_id):
         # TODO: Use milestone id to pick milestone
         project = Project.objects.filter(pk=id).first()
-        milestone = None
-        for test_milestone in GradeMilestone.objects.all():
-            root_category = test_milestone.grade_category
-            while root_category.parent_category is not None:
-                root_category = root_category.parent_category
-            if project.project_group == GradeCalculation.objects.filter(
-                    grade_category=root_category).first().project_group:
-                milestone = test_milestone
-                break
+        milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
+        if milestone is None:
+            return JsonResponse({"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."})
 
         promised_json = []
 
