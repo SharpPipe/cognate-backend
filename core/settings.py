@@ -50,7 +50,9 @@ INSTALLED_APPS = [
     'app',
 
     'rest_framework',
-    'rest_framework_simplejwt'
+    'rest_framework_simplejwt',
+
+    'django_extensions'
 ]
 
 MIDDLEWARE = [
@@ -159,4 +161,9 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1)
 }
-APPEND_SLASH=False
+APPEND_SLASH = False
+
+GRAPH_MODELS = {
+  'all_applications': True,
+  'group_models': True,
+}

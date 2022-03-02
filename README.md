@@ -27,3 +27,8 @@ docker exec -it pgdb psql -U postgres
 \c postgres
 ```
 
+## To generate model picture
+```
+python3 manage.py graph_models --pydot -a -g -o pic.png
+```
+
