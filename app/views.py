@@ -135,8 +135,12 @@ class GradeCategoryView(views.APIView):
         project_group = root.grade_calculation.project_group
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         allowed_rights = ["A", "O"]
+        print(user_project_groups.count())
+        print(user_project_groups.first().rights)
         has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
 
+        print(serializer.is_valid())
+        print(has_rights)
         if has_rights and serializer.is_valid():
             grade_category = serializer.save()
             grade_category.parent_category = parent
@@ -145,7 +149,13 @@ class GradeCategoryView(views.APIView):
                 for user_project in project.userproject_set.all():
                     add_user_grade_recursive(user_project, grade_category)
             if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
-                grade_milestone = GradeMilestone.objects.create(start=request.data["start"], end=request.data["end"], grade_category=grade_category)
+                amount = get_amount_of_grademilestone_by_projectgroup(project_group)
+                grade_milestone = GradeMilestone.objects.create(
+                    start=request.data["start"],
+                    end=request.data["end"],
+                    grade_category=grade_category,
+                    milestone_order_id=amount + 1
+                )
             return JsonResponse(GradeCategorySerializer(grade_category).data)
         return JsonResponse({4: 18})
 
@@ -490,6 +500,17 @@ class ProjectMilestonesView(views.APIView):
         return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
 
 
+def get_amount_of_grademilestone_by_projectgroup(project_group):
+    count = 0
+    for test_milestone in GradeMilestone.objects.all():
+        root_category = test_milestone.grade_category
+        while root_category.parent_category is not None:
+            root_category = root_category.parent_category
+        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+            count += 1
+    return count
+
+
 def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group, milestone_id):
     for test_milestone in GradeMilestone.objects.all():
         if test_milestone.milestone_order_id != milestone_id:
@@ -581,7 +602,6 @@ class ProjectMilestoneDataView(views.APIView):
 
 class ProjectMilestoneTimeSpentView(views.APIView):
     def get(self, request, id, milestone_id):
-        # TODO: Use milestone id to pick milestone
         project = Project.objects.filter(pk=id).first()
         milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
         if milestone is None:
