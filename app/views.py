@@ -7,6 +7,7 @@ import random
 from rest_framework import views
 from django.http import JsonResponse
 from django.contrib.auth.models import User
+from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
     GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback
@@ -169,8 +170,21 @@ class GradeCategoryView(views.APIView):
         allowed_rights = ["A", "O"]
         has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
         if has_rights:
-            grade_category.delete()
-            return JsonResponse({200: "OK"})
+            try:
+                target_milestone = grade_category.grademilestone
+            except ObjectDoesNotExist:
+                # Is not a milestone
+                grade_category.delete()
+                return JsonResponse({200: "OK"})
+            else:
+                all_milestones = get_grade_milestones_by_projectgroup(project_group)
+                for milestone in all_milestones:
+                    if milestone.milestone_order_id > target_milestone.milestone_order_id:
+                        milestone.milestone_order_id = milestone.milestone_order_id - 1
+                        milestone.save()
+                target_milestone.delete()
+                grade_category.delete()
+                return JsonResponse({200: "OK"})
         return JsonResponse({4: 18})
 
 
@@ -500,15 +514,19 @@ class ProjectMilestonesView(views.APIView):
         return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
 
 
-def get_amount_of_grademilestone_by_projectgroup(project_group):
-    count = 0
+def get_grade_milestones_by_projectgroup(project_group):
+    grademilestones = []
     for test_milestone in GradeMilestone.objects.all():
         root_category = test_milestone.grade_category
         while root_category.parent_category is not None:
             root_category = root_category.parent_category
         if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
-            count += 1
-    return count
+            grademilestones.append(test_milestone)
+    return grademilestones
+
+
+def get_amount_of_grademilestone_by_projectgroup(project_group):
+    return len(get_grade_milestones_by_projectgroup(project_group))
 
 
 def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group, milestone_id):
