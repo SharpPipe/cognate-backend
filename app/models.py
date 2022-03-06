@@ -100,6 +100,7 @@ class AutomateGrade(models.Model):
 class GradeMilestone(models.Model):
     start = models.DateTimeField()
     end = models.DateTimeField()
+    milestone_order_id = models.IntegerField()
     grade_category = models.OneToOneField(GradeCategory, on_delete=models.CASCADE, null=True, blank=True)
 
 

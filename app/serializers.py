@@ -42,7 +42,7 @@ class RecursiveField(serializers.Serializer):
 class GradeMilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = GradeMilestone
-        fields = ['start', 'end']
+        fields = ['start', 'end', 'milestone_order_id']
 
 
 class GradeCategorySerializer(serializers.ModelSerializer):
