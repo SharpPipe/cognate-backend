@@ -515,9 +515,18 @@ class ProjectGroupUpdateView(views.APIView):
 
 class ProjectMilestonesView(views.APIView):
     def get(self, request, id):
-        project = Project.objects.filter(pk=id).first()
-        milestones = Milestone.objects.filter(repository__project=project)
-        return JsonResponse(MilestoneSerializer(milestones, many=True).data, safe=False)
+        # TODO: repurpose this endpoint
+        data = []
+        i = 1
+        name = ""
+        while True:
+            res = get_milestone_data_for_project(request, id, i)
+            if res["status"] == 418:
+                break
+            name = res["project_name"]
+            data.append({"milestone_number": i, "milestone_data": res["project_data"]})
+            i += 1
+        return JsonResponse({"status": 200, "project_name": name, "project_data": data})
 
 
 def get_grade_milestones_by_projectgroup(project_group):
