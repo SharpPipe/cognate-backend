@@ -12,7 +12,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
     GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
-    RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer
+    RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer
 
 
 def get_members_from_repo(repo, user, get_all):
@@ -652,3 +652,22 @@ class FeedbackView(views.APIView):
     def post(self, request):
         Feedback.objects.create(text=request.data["feedback"])
         return JsonResponse({200: "OK"})
+
+
+class ProjectMilestoneConnectionsView(views.APIView):
+    def get(self, request, id):
+        print(f"Requesting milestones for project {id}")
+        project = Project.objects.filter(pk=id).first()
+        grade_milestones = get_grade_milestones_by_projectgroup(project.project_group)
+        for gm in grade_milestones:
+            print(gm)
+        gm_serializer = GradeMilestoneSerializer(grade_milestones, many=True)
+        milestones = []
+        for repository in project.repository_set.all():
+            for milestone in repository.milestones.all():
+                milestones.append(milestone)
+        m_serializer = MilestoneSerializer(milestones, many=True)
+        return JsonResponse({
+            "grade_milestones": gm_serializer.data,
+            "milestones": m_serializer.data
+        })
