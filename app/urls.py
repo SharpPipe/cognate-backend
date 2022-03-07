@@ -5,7 +5,7 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     GradeCategoryView, ProjectGroupGradingView, ProjectGradesView, RootAddUsers, MockAccounts, GradeUserView, \
     RepositoryUpdateView, ProjectGroupUpdateView, ProjectMilestonesView, ProjectMilestoneDataView, \
     ProjectMilestoneTimeSpentView, BulkGradeView, FeedbackView, GroupSummaryMilestoneDataView, \
-    ProjectMilestoneConnectionsView
+    ProjectMilestoneConnectionsView, MilestoneSetGradeMilestoneView
 
 router = routers.DefaultRouter()
 
@@ -30,5 +30,6 @@ urlpatterns = [
     path("feedback/", FeedbackView.as_view(), name="feedback"),
     path("groups/<int:id>/milestone/<int:milestone_id>/", GroupSummaryMilestoneDataView.as_view(), name="group_summary_project_milestone_data"),
     path("projects/<int:id>/milestone_connections/", ProjectMilestoneConnectionsView.as_view(), name="project_milestone_connections"),
+    path("milestones/<int:id>/grade_milestone/", MilestoneSetGradeMilestoneView.as_view(), name="set_grade_milestone_for_milestone"),
     path('', include(router.urls)),
 ]

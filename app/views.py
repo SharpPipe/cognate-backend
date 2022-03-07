@@ -37,6 +37,12 @@ def add_user_grade(user_project, project_group):
     add_user_grade_recursive(user_project, root_category)
 
 
+def get_root_category(category):
+    if category.parent_category is not None:
+        return get_root_category(category.parent_category)
+    return category
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
@@ -656,18 +662,41 @@ class FeedbackView(views.APIView):
 
 class ProjectMilestoneConnectionsView(views.APIView):
     def get(self, request, id):
-        print(f"Requesting milestones for project {id}")
         project = Project.objects.filter(pk=id).first()
+
+        # Grade milestones
         grade_milestones = get_grade_milestones_by_projectgroup(project.project_group)
-        for gm in grade_milestones:
-            print(gm)
         gm_serializer = GradeMilestoneSerializer(grade_milestones, many=True)
+
+        # Repository milestones
         milestones = []
         for repository in project.repository_set.all():
             for milestone in repository.milestones.all():
                 milestones.append(milestone)
         m_serializer = MilestoneSerializer(milestones, many=True)
+
         return JsonResponse({
             "grade_milestones": gm_serializer.data,
             "milestones": m_serializer.data
         })
+
+
+class MilestoneSetGradeMilestoneView(views.APIView):
+    def put(self, request, id):
+        repo_milestone = Milestone.objects.filter(pk=id).first()
+        if request.data["id"] != -1:
+            grade_milestone = GradeMilestone.objects.filter(pk=request.data["id"]).first()
+        else:
+            grade_milestone = None
+        # TODO: Check that connection is allowed
+        if grade_milestone is not None:
+            repo_milestone_project_group = repo_milestone.repository.project.project_group
+            root_category = get_root_category(grade_milestone.grade_category)
+            grade_milestone_project_group = GradeCalculation.objects.filter(grade_category=root_category).first().project_group
+            if repo_milestone_project_group != grade_milestone_project_group:
+                print(f"Repository milestone {repo_milestone} and grade milestone {grade_milestone} do not have matching project groups.")
+                return JsonResponse({418: "ERROR"})
+
+        repo_milestone.grade_milestone = grade_milestone
+        repo_milestone.save()
+        return JsonResponse({200: "OK"})
