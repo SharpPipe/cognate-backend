@@ -342,13 +342,20 @@ def get_milestone_data_for_project(request, id, milestone_id):
     return {"status": 200, "project_name": project.name, "project_data": promised_json}
 
 
+anonymous_json = {"Error": "Not logged in."}
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
         serializer = ProjectGroupSerializer(queryset, many=True)
         return JsonResponse(serializer.data, safe=False)
 
     def post(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         serializer = ProjectGroupSerializer(data=request.data)
         if serializer.is_valid():
             project_group = serializer.save()
@@ -360,6 +367,8 @@ class ProjectGroupView(views.APIView):
 
 class ProjectGroupLoadProjectsView(views.APIView):
     def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         # x8xkGpUazyPda_ecaGtG
         print(f"Getting projects for project group {id}")
         group = ProjectGroup.objects.filter(pk=id).first()
@@ -407,6 +416,8 @@ class ProjectGroupLoadProjectsView(views.APIView):
 
 class ProjectsView(views.APIView):
     def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         group = ProjectGroup.objects.filter(pk=id).first()
         projects = Project.objects.filter(project_group=group)
         serializer = ProjectSerializer(projects, many=True)
@@ -415,6 +426,8 @@ class ProjectsView(views.APIView):
 
 class RepositoryView(views.APIView):
     def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         project = Project.objects.filter(pk=id).first()
         repos = Repository.objects.filter(project=project)
         serializer = RepositorySerializer(repos, many=True)
@@ -423,6 +436,8 @@ class RepositoryView(views.APIView):
 
 class ProfileView(views.APIView):
     def put(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
         profile.gitlab_token = request.data["gitlab_token"]
         profile.save()
@@ -431,6 +446,8 @@ class ProfileView(views.APIView):
 
 class GradeCategoryView(views.APIView):
     def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         serializer = GradeCategorySerializer(data=request.data)
         parent = GradeCategory.objects.filter(pk=id).first()
 
@@ -466,6 +483,8 @@ class GradeCategoryView(views.APIView):
         return JsonResponse({4: 18})
 
     def delete(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         grade_category = GradeCategory.objects.filter(pk=id).first()
         root = grade_category
         while root.parent_category is not None:
@@ -495,6 +514,8 @@ class GradeCategoryView(views.APIView):
 
 class ProjectGroupGradingView(views.APIView):
     def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         if user_project_groups.count() == 0:
@@ -506,6 +527,8 @@ class ProjectGroupGradingView(views.APIView):
 
 class ProjectGradesView(views.APIView):
     def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         project = Project.objects.filter(pk=id).first()
         user_projects = UserProject.objects.filter(account=request.user).filter(project=project)
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project.project_group)
@@ -530,6 +553,8 @@ class ProjectGradesView(views.APIView):
 
 class RootAddUsers(views.APIView):
     def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         if not request.user.is_superuser:
             return JsonResponse({4: 18})
 
@@ -563,12 +588,16 @@ class RootAddUsers(views.APIView):
 
 class MockAccounts(views.APIView):
     def get(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         accounts = User.objects.filter(profile__actual_account=False)
         return JsonResponse([x.id for x in accounts], safe=False)
 
 
 class GradeUserView(views.APIView):
     def post(self, request, user_id, grade_id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
         grade_user(user_id, grade_id, request.data["amount"])
         return JsonResponse({200: "OK"})
@@ -576,13 +605,16 @@ class GradeUserView(views.APIView):
 
 class RepositoryUpdateView(views.APIView):
     def get(self, request, id):
-        # TODO: add validation
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         repo = update_repository(id, request.user, [])
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
 
 
 class ProjectGroupUpdateView(views.APIView):
     def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
         repos = []
         new_users = []
@@ -599,6 +631,8 @@ class ProjectGroupUpdateView(views.APIView):
 class ProjectMilestonesView(views.APIView):
     def get(self, request, id):
         # TODO: repurpose this endpoint
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         data = []
         i = 1
         name = ""
@@ -614,6 +648,8 @@ class ProjectMilestonesView(views.APIView):
 
 class GroupSummaryMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         data = []
         for project in ProjectGroup.objects.filter(pk=id).first().project_set.all():
             project_res = get_milestone_data_for_project(request, project.pk, milestone_id)
@@ -626,6 +662,8 @@ class GroupSummaryMilestoneDataView(views.APIView):
 
 class ProjectMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         res = get_milestone_data_for_project(request, id, milestone_id)
         if res["status"] == 418:
             return JsonResponse(res)
@@ -635,6 +673,8 @@ class ProjectMilestoneDataView(views.APIView):
 
 class ProjectMilestoneTimeSpentView(views.APIView):
     def get(self, request, id, milestone_id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         project = Project.objects.filter(pk=id).first()
         milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
         if milestone is None:
@@ -657,6 +697,8 @@ class ProjectMilestoneTimeSpentView(views.APIView):
 
 class BulkGradeView(views.APIView):
     def post(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         print(request.data)
         for sub_grade in request.data:
             grade_user(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
@@ -671,6 +713,8 @@ class FeedbackView(views.APIView):
 
 class ProjectMilestoneConnectionsView(views.APIView):
     def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         project = Project.objects.filter(pk=id).first()
 
         # Grade milestones
@@ -692,6 +736,8 @@ class ProjectMilestoneConnectionsView(views.APIView):
 
 class MilestoneSetGradeMilestoneView(views.APIView):
     def put(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
         repo_milestone = Milestone.objects.filter(pk=id).first()
         if request.data["id"] != -1:
             grade_milestone = GradeMilestone.objects.filter(pk=request.data["id"]).first()
