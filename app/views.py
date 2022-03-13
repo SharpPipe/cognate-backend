@@ -43,6 +43,305 @@ def get_root_category(category):
     return category
 
 
+def create_user(username, user_objects):
+    users = User.objects.filter(username=username)
+    if users.count() > 0:
+        user_objects.append(users.first())
+        return
+    email = username + "@ttu.ee"
+    sub_data = {}
+    sub_data["username"] = username
+    sub_data["email"] = email
+    sub_data["password"] = "".join([random.choice(string.ascii_lowercase) for _ in range(20)])
+    sub_data["password_confirm"] = sub_data["password"]
+    if "." in username:
+        sub_data["first_name"] = username.split(".")[0]
+        sub_data["last_name"] = ".".join(username.split(".")[1:])
+    else:
+        sub_data["first_name"] = username[:len(username) // 2]
+        sub_data["last_name"] = username[len(username) // 2:]
+    serializer = RegisterSerializer(data=sub_data)
+    serializer.is_valid()
+    user_object = serializer.save()
+    Profile.objects.create(user=user_object, actual_account=False)
+    user_objects.append(user_object)
+
+
+def pick_user_grade(query):
+    options = query.all()
+    order = ["M", "A", "P"]
+    for target_type in order:
+        for option in options:
+            if option.grade_type == target_type:
+                return option
+
+
+def grade_user(user_id, grade_id, amount):
+    user_project = UserProject.objects.filter(pk=user_id).first()
+    grade = GradeCategory.objects.filter(pk=grade_id).first()
+    search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade)
+
+    added_data = False
+    for old_grade in search.all():
+        if old_grade.grade_type == "P":
+            old_grade.delete()
+        elif old_grade.grade_type == "M":
+            old_grade.amount = amount
+            old_grade.save()
+            added_data = True
+        elif old_grade.grade_type == "A":
+            pass
+    if not added_data:
+        new_grade = UserGrade.objects.create(amount=amount, user_project=user_project,
+                                             grade_category=grade, grade_type="M")
+
+    parent = grade.parent_category
+    while parent is not None:
+        modify = False
+        if parent.grade_type == "S":
+            func = sum
+            modify = True
+        elif parent.grade_type == "M":
+            func = max
+            modify = True
+        elif parent.grade_type == "I":
+            func = min
+            modify = True
+
+        if modify:
+            children = parent.children
+            children_total_potential = func([c.total for c in children.all()])
+            children_total_value = func(
+                [pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=c)).amount
+                 for c in children.all()])
+
+            # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
+            parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent).first()
+            parent_grade.amount = parent.total * children_total_value / children_total_potential
+            parent_grade.save()
+        else:
+            break
+
+        grade = parent
+        parent = grade.parent_category
+
+
+available_times = {
+    "m": 1,
+    "h": 60,
+    "d": 480,
+    "w": 2400
+}
+
+
+def minute_amount(message):
+    at_numbers = True
+    number_part = ''
+    letter_part = ''
+    for letter in message:
+        if letter.isdigit():
+            if not at_numbers:
+                return False
+            number_part += letter
+        else:
+            at_numbers = False
+            letter_part += letter
+    if len(number_part) == 0 or len(number_part) == 0:
+        return False
+    number = int(number_part)
+    if letter_part not in available_times.keys():
+        return False
+    return number * available_times[letter_part]
+
+
+def is_time_spent_message(message):
+    if "added " not in message:
+        return False, 0
+    message = message.split("added ")[1]
+    if " of time spent" not in message:
+        return False, 0
+    message = message.split(" of time spent")[0]
+    parts = [minute_amount(x) for x in message.split(" ")]
+    if False in parts:
+        return False, 0
+    return True, sum(parts)
+
+
+def update_repository(id, user, new_users):
+    repo = Repository.objects.filter(pk=id).first()
+    project = repo.project
+    grade_category_root = project.project_group.grade_calculation.grade_category
+    base_url = "https://gitlab.cs.ttu.ee"
+    api_part = "/api/v4"
+    token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
+
+    # Refresh users
+    answer_json = get_members_from_repo(repo, user, False)
+    print(answer_json)
+    user_objects = []
+    for member in answer_json:
+        create_user(member['username'], user_objects)
+        print(f"{member['username']}")
+    for user_object in user_objects:
+        if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
+            user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
+            add_user_grade_recursive(user_project, grade_category_root)
+
+    # Load all milestones
+    endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
+    answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+    print(answer)
+    for milestone in answer:
+        gitlab_id = milestone["id"]
+        if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
+            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
+            print(f"Created milestone {milestone['title']}")
+
+    # Load all issues
+    issues = []
+    endpoint_part = f"/projects/{repo.gitlab_id}/issues"
+    counter = 1
+    issues_to_refresh = []
+    while True:
+        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
+        issues += answer
+        if len(answer) < 100:
+            break
+        counter += 1
+    for issue in issues:
+        gitlab_id = issue['id']
+        gitlab_iid = issue['iid']
+        title = issue['title']
+        milestone = issue['milestone']
+        issues_to_refresh.append((gitlab_iid, gitlab_id))
+        if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
+            if milestone is not None:
+                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
+            else:
+                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
+
+    # Load all time spent
+    time_spents = []
+
+    for issue, id in issues_to_refresh:
+        endpoint_part = f"/projects/{repo.gitlab_id}/issues/{issue}/notes"
+        counter = 1
+        while True:
+            url = base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)
+            answer = requests.get(url).json()
+            time_spents += [(id, x) for x in answer]
+            if len(answer) < 100:
+                break
+            counter += 1
+    for id, note in time_spents:
+        body = note['body']
+        author = note['author']['username']
+        is_time_spent, amount = is_time_spent_message(body)
+        gitlab_id = note['id']
+        if is_time_spent:
+            user = User.objects.filter(username=author)
+            if user.count() == 0:
+                print(f"Error, unknown user {author} logged time, repo id {repo.gitlab_id}")
+                if author not in new_users:
+                    new_users.append(author)
+                continue
+            if TimeSpent.objects.filter(gitlab_id=gitlab_id).count() == 0:
+                user = user.first()
+                created_at = note['created_at']
+                issue = Issue.objects.filter(gitlab_id=id).first()
+                time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
+        else:
+            print(f"Unknown message with content {body}")
+
+    # Load all commits
+    # TODO: Load commit data
+
+    return repo
+
+
+def get_grade_milestones_by_projectgroup(project_group):
+    grademilestones = []
+    for test_milestone in GradeMilestone.objects.all():
+        root_category = test_milestone.grade_category
+        while root_category.parent_category is not None:
+            root_category = root_category.parent_category
+        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+            grademilestones.append(test_milestone)
+    return grademilestones
+
+
+def get_amount_of_grademilestone_by_projectgroup(project_group):
+    return len(get_grade_milestones_by_projectgroup(project_group))
+
+
+def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group, milestone_id):
+    for test_milestone in GradeMilestone.objects.all():
+        if test_milestone.milestone_order_id != milestone_id:
+            continue
+        root_category = test_milestone.grade_category
+        while root_category.parent_category is not None:
+            root_category = root_category.parent_category
+        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+            return test_milestone
+
+
+def get_milestone_data_for_project(request, id, milestone_id):
+    # TODO: Use milestone id to pick milestone
+    project = Project.objects.filter(pk=id).first()
+    milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
+    if milestone is None:
+        return {"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."}
+
+    promised_json = []
+    print(milestone)
+
+    user_projects = UserProject.objects.filter(project=project).all()
+    print(user_projects)
+    for user_project in user_projects:
+        print(user_project.account.username)
+        user_list = []
+        times_spent = TimeSpent.objects.filter(user=user_project.account).filter(
+            issue__milestone__grade_milestone=milestone).all()
+        total_time = sum([time_spend.amount for time_spend in times_spent]) / 60
+        promised_json.append({
+            "username": user_project.account.username,
+            "id": user_project.pk,
+            "spent_time": total_time,
+            "data": user_list
+        })
+        for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
+            category_data = {}
+            user_list.append(category_data)
+            user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
+            category_data["name"] = grade_category.name
+            category_data["total"] = grade_category.total
+            category_data["automatic_points"] = None
+            category_data["given_points"] = None
+            category_data["id"] = grade_category.pk
+
+            if user_grades.filter(grade_type="A").count() == 0:
+                automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
+                if automate_grade.count() > 0:
+                    automate_grade = automate_grade.first()
+                    if automate_grade.automation_type == "T":
+                        percent_done = min(1, total_time / automate_grade.amount_needed)
+                        points = decimal.Decimal(percent_done) * grade_category.total
+                        UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project,
+                                                 grade_category=grade_category)
+                        user_grades.filter(grade_type="P").delete()
+
+            for user_grade in user_grades.all():
+                if user_grade.grade_type == "A":
+                    category_data["automatic_points"] = user_grade.amount
+            for user_grade in user_grades.all():
+                if user_grade.grade_type == "M":
+                    category_data["given_points"] = user_grade.amount
+
+            print(grade_category.name)
+        print()
+    return {"status": 200, "project_name": project.name, "project_data": promised_json}
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
@@ -229,30 +528,6 @@ class ProjectGradesView(views.APIView):
         return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
 
 
-def create_user(username, user_objects):
-    users = User.objects.filter(username=username)
-    if users.count() > 0:
-        user_objects.append(users.first())
-        return
-    email = username + "@ttu.ee"
-    sub_data = {}
-    sub_data["username"] = username
-    sub_data["email"] = email
-    sub_data["password"] = "".join([random.choice(string.ascii_lowercase) for _ in range(20)])
-    sub_data["password_confirm"] = sub_data["password"]
-    if "." in username:
-        sub_data["first_name"] = username.split(".")[0]
-        sub_data["last_name"] = ".".join(username.split(".")[1:])
-    else:
-        sub_data["first_name"] = username[:len(username) // 2]
-        sub_data["last_name"] = username[len(username) // 2:]
-    serializer = RegisterSerializer(data=sub_data)
-    serializer.is_valid()
-    user_object = serializer.save()
-    Profile.objects.create(user=user_object, actual_account=False)
-    user_objects.append(user_object)
-
-
 class RootAddUsers(views.APIView):
     def post(self, request, id):
         if not request.user.is_superuser:
@@ -292,203 +567,11 @@ class MockAccounts(views.APIView):
         return JsonResponse([x.id for x in accounts], safe=False)
 
 
-def pick_user_grade(query):
-    options = query.all()
-    order = ["M", "A", "P"]
-    for target_type in order:
-        for option in options:
-            if option.grade_type == target_type:
-                return option
-
-
-def grade_user(user_id, grade_id, amount):
-    user_project = UserProject.objects.filter(pk=user_id).first()
-    grade = GradeCategory.objects.filter(pk=grade_id).first()
-    search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade)
-
-    added_data = False
-    for old_grade in search.all():
-        if old_grade.grade_type == "P":
-            old_grade.delete()
-        elif old_grade.grade_type == "M":
-            old_grade.amount = amount
-            old_grade.save()
-            added_data = True
-        elif old_grade.grade_type == "A":
-            pass
-    if not added_data:
-        new_grade = UserGrade.objects.create(amount=amount, user_project=user_project,
-                                             grade_category=grade, grade_type="M")
-
-    parent = grade.parent_category
-    while parent is not None:
-        modify = False
-        if parent.grade_type == "S":
-            func = sum
-            modify = True
-        elif parent.grade_type == "M":
-            func = max
-            modify = True
-        elif parent.grade_type == "I":
-            func = min
-            modify = True
-
-        if modify:
-            children = parent.children
-            children_total_potential = func([c.total for c in children.all()])
-            children_total_value = func(
-                [pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=c)).amount
-                 for c in children.all()])
-
-            # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
-            parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent).first()
-            parent_grade.amount = parent.total * children_total_value / children_total_potential
-            parent_grade.save()
-        else:
-            break
-
-        grade = parent
-        parent = grade.parent_category
-
-
 class GradeUserView(views.APIView):
     def post(self, request, user_id, grade_id):
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
         grade_user(user_id, grade_id, request.data["amount"])
         return JsonResponse({200: "OK"})
-
-
-available_times = {
-    "m": 1,
-    "h": 60,
-    "d": 480,
-    "w": 2400
-}
-
-
-def minute_amount(message):
-    at_numbers = True
-    number_part = ''
-    letter_part = ''
-    for letter in message:
-        if letter.isdigit():
-            if not at_numbers:
-                return False
-            number_part += letter
-        else:
-            at_numbers = False
-            letter_part += letter
-    if len(number_part) == 0 or len(number_part) == 0:
-        return False
-    number = int(number_part)
-    if letter_part not in available_times.keys():
-        return False
-    return number * available_times[letter_part]
-
-
-def is_time_spent_message(message):
-    if "added " not in message:
-        return False, 0
-    message = message.split("added ")[1]
-    if " of time spent" not in message:
-        return False, 0
-    message = message.split(" of time spent")[0]
-    parts = [minute_amount(x) for x in message.split(" ")]
-    if False in parts:
-        return False, 0
-    return True, sum(parts)
-
-
-def update_repository(id, user, new_users):
-    repo = Repository.objects.filter(pk=id).first()
-    project = repo.project
-    grade_category_root = project.project_group.grade_calculation.grade_category
-    base_url = "https://gitlab.cs.ttu.ee"
-    api_part = "/api/v4"
-    token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
-
-    # Refresh users
-    answer_json = get_members_from_repo(repo, user, False)
-    print(answer_json)
-    user_objects = []
-    for member in answer_json:
-        create_user(member['username'], user_objects)
-        print(f"{member['username']}")
-    for user_object in user_objects:
-        if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
-            user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
-            add_user_grade_recursive(user_project, grade_category_root)
-
-    # Load all milestones
-    endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
-    answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
-    print(answer)
-    for milestone in answer:
-        gitlab_id = milestone["id"]
-        if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
-            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
-            print(f"Created milestone {milestone['title']}")
-
-    # Load all issues
-    issues = []
-    endpoint_part = f"/projects/{repo.gitlab_id}/issues"
-    counter = 1
-    issues_to_refresh = []
-    while True:
-        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
-        issues += answer
-        if len(answer) < 100:
-            break
-        counter += 1
-    for issue in issues:
-        gitlab_id = issue['id']
-        gitlab_iid = issue['iid']
-        title = issue['title']
-        milestone = issue['milestone']
-        issues_to_refresh.append((gitlab_iid, gitlab_id))
-        if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
-            if milestone is not None:
-                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
-            else:
-                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
-
-    # Load all time spent
-    time_spents = []
-
-    for issue, id in issues_to_refresh:
-        endpoint_part = f"/projects/{repo.gitlab_id}/issues/{issue}/notes"
-        counter = 1
-        while True:
-            url = base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)
-            answer = requests.get(url).json()
-            time_spents += [(id, x) for x in answer]
-            if len(answer) < 100:
-                break
-            counter += 1
-    for id, note in time_spents:
-        body = note['body']
-        author = note['author']['username']
-        is_time_spent, amount = is_time_spent_message(body)
-        gitlab_id = note['id']
-        if is_time_spent:
-            user = User.objects.filter(username=author)
-            if user.count() == 0:
-                print(f"Error, unknown user {author} logged time, repo id {repo.gitlab_id}")
-                if author not in new_users:
-                    new_users.append(author)
-                continue
-            if TimeSpent.objects.filter(gitlab_id=gitlab_id).count() == 0:
-                user = user.first()
-                created_at = note['created_at']
-                issue = Issue.objects.filter(gitlab_id=id).first()
-                time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
-        else:
-            print(f"Unknown message with content {body}")
-
-    # Load all commits
-    # TODO: Load commit data
-
-    return repo
 
 
 class RepositoryUpdateView(views.APIView):
@@ -527,89 +610,6 @@ class ProjectMilestonesView(views.APIView):
             data.append({"milestone_number": i, "milestone_data": res["project_data"]})
             i += 1
         return JsonResponse({"status": 200, "project_name": name, "project_data": data})
-
-
-def get_grade_milestones_by_projectgroup(project_group):
-    grademilestones = []
-    for test_milestone in GradeMilestone.objects.all():
-        root_category = test_milestone.grade_category
-        while root_category.parent_category is not None:
-            root_category = root_category.parent_category
-        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
-            grademilestones.append(test_milestone)
-    return grademilestones
-
-
-def get_amount_of_grademilestone_by_projectgroup(project_group):
-    return len(get_grade_milestones_by_projectgroup(project_group))
-
-
-def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group, milestone_id):
-    for test_milestone in GradeMilestone.objects.all():
-        if test_milestone.milestone_order_id != milestone_id:
-            continue
-        root_category = test_milestone.grade_category
-        while root_category.parent_category is not None:
-            root_category = root_category.parent_category
-        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
-            return test_milestone
-
-
-def get_milestone_data_for_project(request, id, milestone_id):
-    # TODO: Use milestone id to pick milestone
-    project = Project.objects.filter(pk=id).first()
-    milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
-    if milestone is None:
-        return {"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."}
-
-    promised_json = []
-    print(milestone)
-
-    user_projects = UserProject.objects.filter(project=project).all()
-    print(user_projects)
-    for user_project in user_projects:
-        print(user_project.account.username)
-        user_list = []
-        times_spent = TimeSpent.objects.filter(user=user_project.account).filter(
-            issue__milestone__grade_milestone=milestone).all()
-        total_time = sum([time_spend.amount for time_spend in times_spent]) / 60
-        promised_json.append({
-            "username": user_project.account.username,
-            "id": user_project.pk,
-            "spent_time": total_time,
-            "data": user_list
-        })
-        for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
-            category_data = {}
-            user_list.append(category_data)
-            user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
-            category_data["name"] = grade_category.name
-            category_data["total"] = grade_category.total
-            category_data["automatic_points"] = None
-            category_data["given_points"] = None
-            category_data["id"] = grade_category.pk
-
-            if user_grades.filter(grade_type="A").count() == 0:
-                automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
-                if automate_grade.count() > 0:
-                    automate_grade = automate_grade.first()
-                    if automate_grade.automation_type == "T":
-                        percent_done = min(1, total_time / automate_grade.amount_needed)
-                        points = decimal.Decimal(percent_done) * grade_category.total
-                        UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project,
-                                                 grade_category=grade_category)
-                        user_grades.filter(grade_type="P").delete()
-
-            for user_grade in user_grades.all():
-                if user_grade.grade_type == "A":
-                    category_data["automatic_points"] = user_grade.amount
-            for user_grade in user_grades.all():
-                if user_grade.grade_type == "M":
-                    category_data["given_points"] = user_grade.amount
-
-            print(grade_category.name)
-        print()
-    return {"status": 200, "project_name": project.name, "project_data": promised_json}
 
 
 class GroupSummaryMilestoneDataView(views.APIView):
