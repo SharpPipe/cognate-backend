@@ -116,6 +116,7 @@ class Issue(models.Model):
     title = models.TextField(null=True, blank=True)
     gitlab_iid = models.IntegerField()
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="issues", null=True, blank=True)
+    has_been_moved = models.BooleanField(default=False)
 
 
 class TimeSpent(models.Model):
