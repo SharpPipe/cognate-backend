@@ -214,11 +214,21 @@ def update_repository(id, user, new_users):
         title = issue['title']
         milestone = issue['milestone']
         issues_to_refresh.append((gitlab_iid, gitlab_id))
-        if Issue.objects.filter(gitlab_id=gitlab_id).count() == 0:
+        issue_query = Issue.objects.filter(gitlab_id=gitlab_id)
+        if issue_query.count() == 0:
             if milestone is not None:
                 issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
             else:
                 issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
+        else:
+            issue_object = issue_query.first()
+            if milestone is not None:
+                milestone_object = Milestone.objects.filter(gitlab_id=milestone['id']).first()
+                if issue_object.milestone != milestone_object:
+                    if issue_object.milestone is None:
+                        issue_object.has_been_moved = True
+                    issue_object.milestone = milestone_object
+                    issue_object.save()
 
     # Load all time spent
     time_spents = []
@@ -286,7 +296,6 @@ def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group,
 
 
 def get_milestone_data_for_project(request, id, milestone_id):
-    # TODO: Use milestone id to pick milestone
     project = Project.objects.filter(pk=id).first()
     milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
     if milestone is None:
