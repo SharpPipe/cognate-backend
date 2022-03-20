@@ -825,3 +825,10 @@ class MilestoneSetGradeMilestoneView(views.APIView):
         repo_milestone.grade_milestone = grade_milestone
         repo_milestone.save()
         return JsonResponse({200: "OK"})
+
+
+class TestLoginView(views.APIView):
+    def get(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse({}, status=401)
+        return JsonResponse({})
