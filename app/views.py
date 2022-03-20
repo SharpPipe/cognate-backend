@@ -180,8 +180,11 @@ def update_repository(id, user, new_users):
     print(answer_json)
     user_objects = []
     for member in answer_json:
-        create_user(member['username'], user_objects)
+        print(member)
+        if member["access_level"] >= 30:
+            create_user(member['username'], user_objects)
         print(f"{member['username']}")
+        print()
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
             user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
