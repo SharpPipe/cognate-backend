@@ -314,7 +314,8 @@ def get_milestone_data_for_project(request, id, milestone_id):
         user_list = []
         times_spent = TimeSpent.objects.filter(user=user_project.account).filter(
             issue__milestone__grade_milestone=milestone).all()
-        total_time = sum([time_spend.amount for time_spend in times_spent]) / 60
+        print(f"User {user_project}")
+        total_time = sum([time_spend.amount for time_spend in times_spent if milestone.start <= time_spend.time <= milestone.end]) / 60
         promised_json.append({
             "username": user_project.account.username,
             "id": user_project.pk,
