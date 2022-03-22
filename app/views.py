@@ -533,7 +533,7 @@ class GradeCategoryView(views.APIView):
             root = root.parent_category
         project_group = root.grade_calculation.project_group
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
-        allowed_rights = ["A", "O"]
+        allowed_rights = ["O"]
         has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
         if has_rights:
             try:
