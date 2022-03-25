@@ -21,3 +21,8 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+    volumes:
+      - cognate-db-data:/var/lib/postgresql/data
+
+volumes:
+  cognate-db-data:
