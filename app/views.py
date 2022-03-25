@@ -801,7 +801,7 @@ class ProjectMilestoneConnectionsView(views.APIView):
         m_serializer = MilestoneSerializer(milestones, many=True)
 
         return JsonResponse({
-            "grade_milestones": list(sorted(gm_serializer.data, key=lambda x: x["id"])),
+            "grade_milestones": list(sorted(gm_serializer.data, key=lambda x: x["milestone_order_id"])),
             "milestones": m_serializer.data
         })
 
