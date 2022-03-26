@@ -26,6 +26,6 @@ deploy:
     - echo "Building Docker and Postgre"
     - docker-compose down
     - docker-compose up -d --build
-    - docker exec -it django bash "service cron start"
+    - docker exec django bash "service cron start"
   environment: main
 
