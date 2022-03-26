@@ -386,7 +386,10 @@ class ProjectGroupView(views.APIView):
             return JsonResponse(anonymous_json)
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
         serializer = ProjectGroupSerializer(queryset, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        data = serializer.data
+        for point in data:
+            point["rights"] = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=point["id"]).all()]
+        return JsonResponse(data, safe=False)
 
     def post(self, request):
         if request.user.is_anonymous:
