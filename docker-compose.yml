@@ -5,9 +5,7 @@ services:
     image: cognate/back
     command: >
       sh -c "python manage.py migrate &&
-             python manage.py runserver 0.0.0.0:8081 &&
-             service cron start >> output.txt &&
-             touch test.txt"
+             python manage.py runserver 0.0.0.0:8081"
     volumes:
       - .:/usr/src/app
     ports:
