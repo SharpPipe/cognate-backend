@@ -385,8 +385,8 @@ def project_group_of_grade_category_id(grade_id):
     return root_category.grade_calculation.project_group
 
 
-def update_all_repos_in_group(project_group, user, hash):
-    print(f"Starting process with hash {hash}")
+def update_all_repos_in_group(project_group, user, process):
+    print(f"Starting process with hash {process.hash}")
     repos = []
     new_users = []
     for project in project_group.project_set.all():
@@ -394,11 +394,15 @@ def update_all_repos_in_group(project_group, user, hash):
             repos.append(repository.pk)
     for i, repo in enumerate(repos):
         update_repository(repo, user, new_users)
+        process.completion_percentage = 100 * i / len(repos)
+        process.save()
         print(f"{100 * i / len(repos)}% done refreshing repos")
+    process.completion_percentage = 100
+    process.status = "F"
+    process.data = ProjectGroupSerializer(project_group).data
+    process.save()
     print(f"Added users {new_users}")
-    print(f"Finished process with hash {hash}")
-    # TODO: Instead of returning data, should update process
-    return JsonResponse({200: "OK", "data": ProjectGroupSerializer(project_group).data})
+    print(f"Finished process with hash {process.hash}")
 
 
 class ProjectGroupView(views.APIView):
@@ -697,7 +701,7 @@ class ProjectGroupUpdateView(views.APIView):
         [h.update(str(x).encode()) for x in [time.time(), id, request.user.pk]]
         process = Process.objects.create(hash=h.hexdigest(), type="SG", status="O", completion_percentage=0)
         process.save()
-        t = threading.Thread(target=update_all_repos_in_group, args=[project_group, request.user, process.hash], daemon=True)
+        t = threading.Thread(target=update_all_repos_in_group, args=[project_group, request.user, process], daemon=True)
         t.start()
         return JsonResponse({
             "id": process.pk,
