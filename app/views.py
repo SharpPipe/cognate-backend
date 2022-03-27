@@ -489,11 +489,19 @@ class ProjectsView(views.APIView):
         if not user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
             return JsonResponse(no_access_json)
         projects = Project.objects.filter(project_group=group).all()
+        root_category = group.grade_calculation.grade_category
+        total = root_category.total
         data = []
+        base_grade_filter = UserGrade.objects.filter(grade_category=root_category)
         for project in projects:
             devs = []
             for dev in project.userproject_set.filter(disabled=False).all():
-                devs.append(dev.account.username)
+                dev_data = {}
+                grade_object = base_grade_filter.filter(user_project=dev).first()
+                dev_data["points"] = grade_object.amount * total
+                dev_data["name"] = dev.account.username
+                devs.append(dev_data)
+
             dat = ProjectSerializer(project).data
             dat["users"] = devs
             data.append(dat)
