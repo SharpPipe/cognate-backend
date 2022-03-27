@@ -164,9 +164,13 @@ class Feedback(models.Model):
 
     text = models.TextField(null=True, blank=True)
     type = models.CharField(max_length=2, choices=FeedbackType.choices)
+
     project = models.ForeignKey(Project, on_delete=models.CASCADE, null=True, blank=True, related_name="feedback")
     user = models.ForeignKey(UserProject, on_delete=models.CASCADE, null=True, blank=True, related_name="feedback")
     grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.CASCADE, null=True, blank=True, related_name="feedback")
+
+    commenter = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True)
+    time = models.DateTimeField()
 
 
 class Process(models.Model):

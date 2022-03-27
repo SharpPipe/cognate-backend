@@ -136,6 +136,8 @@ class ProcessSerializer(serializers.ModelSerializer):
 
 
 class FeedbackSerializer(serializers.ModelSerializer):
+    commenter = AccountUsernameSerializer()
+
     class Meta:
         model = Feedback
-        fields = ['text']
+        fields = ['text', 'time', 'commenter']

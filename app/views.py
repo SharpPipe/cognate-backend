@@ -6,6 +6,7 @@ import random
 import hashlib
 import time
 import threading
+import datetime
 
 from rest_framework import views
 from django.http import JsonResponse
@@ -852,7 +853,9 @@ class FeedbackView(views.APIView):
         dat = request.data
         if "feedback" not in dat.keys() or "type" not in dat.keys():
             return JsonResponse({"Error": "Incorrect fields"}, status=400)
-        feedback = Feedback.objects.create(text=dat["feedback"], type=dat["type"])
+        feedback = Feedback.objects.create(text=dat["feedback"], type=dat["type"], time=datetime.datetime.now())
+        if not request.user.is_anonymous:
+            feedback.commenter = request.user
         for req in self.field_requirements[dat["type"]]:
             if req not in dat.keys():
                 return JsonResponse({"Error": "Incorrect fields"}, status=400)
