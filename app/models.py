@@ -158,4 +158,15 @@ class Feedback(models.Model):
     text = models.TextField(null=True, blank=True)
 
 
+class Process(models.Model):
+    class ProcessType(models.TextChoices):
+        SYNC_GROUP = ("SG", "Sync group")
 
+    class ProcessStatus(models.TextChoices):
+        ONGOING = ("O", "Ongoing")
+        FINISHED = ("F", "Finished")
+
+    hash = models.TextField()
+    type = models.CharField(max_length=2, choices=ProcessType.choices)
+    status = models.CharField(max_length=1, choices=ProcessStatus.choices)
+    completion_percentage = models.DecimalField(max_digits=6, decimal_places=3)
