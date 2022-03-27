@@ -170,3 +170,4 @@ class Process(models.Model):
     type = models.CharField(max_length=2, choices=ProcessType.choices)
     status = models.CharField(max_length=1, choices=ProcessStatus.choices)
     completion_percentage = models.DecimalField(max_digits=6, decimal_places=3)
+    data = models.JSONField(null=True, blank=True)
