@@ -6,6 +6,7 @@ import random
 import hashlib
 import time
 import threading
+import datetime
 
 from rest_framework import views
 from django.http import JsonResponse
@@ -17,7 +18,7 @@ from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
-    ProcessSerializer
+    ProcessSerializer, FeedbackSerializer
 
 
 def get_members_from_repo(repo, user, get_all):
@@ -815,9 +816,57 @@ class BulkGradeView(views.APIView):
 
 
 class FeedbackView(views.APIView):
+
+    field_requirements = {
+        "AP": [],
+        "PA": ["project"],
+        "PM": ["project", "gradeMilestone"],
+        "UA": ["userProject"],
+        "UM": ["userProject", "gradeMilestone"]
+    }
+
+    objects = {
+        "project": Project.objects,
+        "gradeMilestone": GradeMilestone.objects,
+        "userProject": UserProject.objects
+    }
+
+    def get(self, request):
+        # TODO: Add authentication, but this is tricky and not very critical.
+        dat = request.data
+        if "type" not in dat.keys():
+            return JsonResponse({"Error": "Incorrect fields"}, status=400)
+        feedbacks = Feedback.objects.filter(type=dat["type"])
+        for req in self.field_requirements[dat["type"]]:
+            if req not in dat.keys():
+                return JsonResponse({"Error": "Incorrect fields"}, status=400)
+            if req == "project":
+                feedbacks = feedbacks.filter(project=dat[req])
+            elif req == "gradeMilestone":
+                feedbacks = feedbacks.filter(grade_milestone=dat[req])
+            elif req == "userProject":
+                feedbacks = feedbacks.filter(user=dat[req])
+        return JsonResponse(FeedbackSerializer(feedbacks, many=True).data, safe=False)
+
     def post(self, request):
-        Feedback.objects.create(text=request.data["feedback"])
-        return JsonResponse({200: "OK"})
+        # TODO: Add authentication, but is okay for now, because isn't critical functionality.
+        dat = request.data
+        if "feedback" not in dat.keys() or "type" not in dat.keys():
+            return JsonResponse({"Error": "Incorrect fields"}, status=400)
+        feedback = Feedback.objects.create(text=dat["feedback"], type=dat["type"], time=datetime.datetime.now())
+        if not request.user.is_anonymous:
+            feedback.commenter = request.user
+        for req in self.field_requirements[dat["type"]]:
+            if req not in dat.keys():
+                return JsonResponse({"Error": "Incorrect fields"}, status=400)
+            if req == "project":
+                feedback.project = Project.objects.filter(pk=dat[req]).first()
+            elif req == "gradeMilestone":
+                feedback.grade_milestone = GradeMilestone.objects.filter(pk=dat[req]).first()
+            elif req == "userProject":
+                feedback.user = GradeMilestone.objects.filter(pk=dat[req]).first()
+        feedback.save()
+        return JsonResponse({})
 
 
 class ProjectMilestoneConnectionsView(views.APIView):
