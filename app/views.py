@@ -860,3 +860,13 @@ class TestLoginView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse({}, status=401)
         return JsonResponse({})
+
+
+class ProcessInfoView(views.APIView):
+    def get(self, request, id, hash):
+        if request.user.is_anonymous:
+            return JsonResponse({}, status=401)
+        processes = Process.objects.filter(pk=id).filter(hash=hash)
+        if processes.count() == 0:
+            return JsonResponse({"error": f"Process with id {id} and hash {hash} does not exist."}, status=404)
+        return JsonResponse({"process": ProcessSerializer(processes.first()).data})
