@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeMilestone, UserGrade, UserProject, \
-    Milestone
+    Milestone, Process
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -127,3 +127,9 @@ class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Milestone
         fields = ['id', 'grade_milestone', 'repository', 'title', 'gitlab_id']
+
+
+class ProcessSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Process
+        fields = ['id', 'hash', 'type', 'status', 'completion_percentage', 'data']

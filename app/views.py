@@ -3,6 +3,9 @@ import string
 
 import requests
 import random
+import hashlib
+import time
+import threading
 
 from rest_framework import views
 from django.http import JsonResponse
@@ -10,9 +13,11 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process
+
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
-    RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer
+    RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
+    ProcessSerializer
 
 
 def get_members_from_repo(repo, user, get_all):
@@ -380,13 +385,36 @@ def project_group_of_grade_category_id(grade_id):
     return root_category.grade_calculation.project_group
 
 
+def update_all_repos_in_group(project_group, user, process):
+    print(f"Starting process with hash {process.hash}")
+    repos = []
+    new_users = []
+    for project in project_group.project_set.all():
+        for repository in project.repository_set.all():
+            repos.append(repository.pk)
+    for i, repo in enumerate(repos):
+        update_repository(repo, user, new_users)
+        process.completion_percentage = 100 * i / len(repos)
+        process.save()
+        print(f"{100 * i / len(repos)}% done refreshing repos")
+    process.completion_percentage = 100
+    process.status = "F"
+    process.data = ProjectGroupSerializer(project_group).data
+    process.save()
+    print(f"Added users {new_users}")
+    print(f"Finished process with hash {process.hash}")
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
             return JsonResponse(anonymous_json)
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
         serializer = ProjectGroupSerializer(queryset, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        data = serializer.data
+        for point in data:
+            point["rights"] = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=point["id"]).all()]
+        return JsonResponse(data, safe=False)
 
     def post(self, request):
         if request.user.is_anonymous:
@@ -669,16 +697,27 @@ class ProjectGroupUpdateView(views.APIView):
         project_group = ProjectGroup.objects.filter(pk=id).first()
         if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(no_access_json)
-        repos = []
-        new_users = []
-        for project in project_group.project_set.all():
-            for repository in project.repository_set.all():
-                repos.append(repository.pk)
-        for i, repo in enumerate(repos):
-            update_repository(repo, request.user, new_users)
-            print(f"{100 * i / len(repos)}% done refreshing repos")
-        print(f"Added users {new_users}")
-        return JsonResponse({200: "OK", "data": ProjectGroupSerializer(project_group).data})
+        name = "project group update"
+        hid = hashlib.sha256()
+        [hid.update(str(x).encode()) for x in [name, id]]
+        old = Process.objects.filter(id_hash=hid.hexdigest()).filter(status="O")
+        if old.count() > 0:
+            old_p = old.first()
+            return JsonResponse({
+                "id": old_p.pk,
+                "hash": old_p.hash
+            })
+
+        h = hashlib.sha256()
+        [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
+        process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SG", status="O", completion_percentage=0)
+        process.save()
+        t = threading.Thread(target=update_all_repos_in_group, args=[project_group, request.user, process], daemon=True)
+        t.start()
+        return JsonResponse({
+            "id": process.pk,
+            "hash": process.hash
+        })
 
 
 class ProjectMilestonesView(views.APIView):
@@ -836,3 +875,13 @@ class TestLoginView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse({}, status=401)
         return JsonResponse({})
+
+
+class ProcessInfoView(views.APIView):
+    def get(self, request, id, hash):
+        if request.user.is_anonymous:
+            return JsonResponse({}, status=401)
+        processes = Process.objects.filter(pk=id).filter(hash=hash)
+        if processes.count() == 0:
+            return JsonResponse({"error": f"Process with id {id} and hash {hash} does not exist."}, status=404)
+        return JsonResponse({"process": ProcessSerializer(processes.first()).data})
