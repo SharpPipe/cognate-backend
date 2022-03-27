@@ -17,7 +17,7 @@ class ProjectGroupSerializer(serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
-        fields = ['id', 'name', 'project_group']
+        fields = ['id', 'name']
 
 
 class RepositorySerializer(serializers.ModelSerializer):

@@ -55,6 +55,7 @@ class UserProject(models.Model):
     rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    disabled = models.BooleanField(default=False)
 
     def __str__(self):
         return self.account.username + " <-> " + self.project.name

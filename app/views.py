@@ -488,9 +488,17 @@ class ProjectsView(views.APIView):
         group = ProjectGroup.objects.filter(pk=id).first()
         if not user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
             return JsonResponse(no_access_json)
-        projects = Project.objects.filter(project_group=group)
-        serializer = ProjectSerializer(projects, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        projects = Project.objects.filter(project_group=group).all()
+        data = []
+        for project in projects:
+            devs = []
+            for dev in project.userproject_set.filter(disabled=False).all():
+                devs.append(dev.account.username)
+            dat = ProjectSerializer(project).data
+            dat["users"] = devs
+            data.append(dat)
+        # serializer = ProjectSerializer(projects, many=True)
+        return JsonResponse(data, safe=False)
 
 
 class RepositoryView(views.APIView):
