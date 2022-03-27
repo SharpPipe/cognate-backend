@@ -697,9 +697,20 @@ class ProjectGroupUpdateView(views.APIView):
         project_group = ProjectGroup.objects.filter(pk=id).first()
         if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(no_access_json)
+        name = "project group update"
+        hid = hashlib.sha256()
+        [hid.update(str(x).encode()) for x in [name, id]]
+        old = Process.objects.filter(id_hash=hid.hexdigest()).filter(status="O")
+        if old.count() > 0:
+            old_p = old.first()
+            return JsonResponse({
+                "id": old_p.pk,
+                "hash": old_p.hash
+            })
+
         h = hashlib.sha256()
-        [h.update(str(x).encode()) for x in [time.time(), id, request.user.pk]]
-        process = Process.objects.create(hash=h.hexdigest(), type="SG", status="O", completion_percentage=0)
+        [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
+        process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SG", status="O", completion_percentage=0)
         process.save()
         t = threading.Thread(target=update_all_repos_in_group, args=[project_group, request.user, process], daemon=True)
         t.start()

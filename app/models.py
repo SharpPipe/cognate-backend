@@ -167,6 +167,7 @@ class Process(models.Model):
         FINISHED = ("F", "Finished")
 
     hash = models.TextField()
+    id_hash = models.TextField()
     type = models.CharField(max_length=2, choices=ProcessType.choices)
     status = models.CharField(max_length=1, choices=ProcessStatus.choices)
     completion_percentage = models.DecimalField(max_digits=6, decimal_places=3)
