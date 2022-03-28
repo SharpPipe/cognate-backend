@@ -493,6 +493,7 @@ class ProjectsView(views.APIView):
         total = root_category.total
         data = []
         base_grade_filter = UserGrade.objects.filter(grade_category=root_category)
+        grade_milestones = [x for x in get_grade_milestones_by_projectgroup(group)]
         for project in projects:
             devs = []
             for dev in project.userproject_set.filter(disabled=False).all():
@@ -502,8 +503,25 @@ class ProjectsView(views.APIView):
                 dev_data["name"] = dev.account.username
                 devs.append(dev_data)
 
+            milestones = []
+            for grade_milestone in grade_milestones:
+                this_milestone = {}
+                milestones.append(this_milestone)
+                this_milestone["milestone id"] = grade_milestone.milestone_order_id
+                milestone_category = grade_milestone.grade_category
+                milestone_users = []
+                this_milestone["user points"] = milestone_users
+                for dev in project.userproject_set.filter(disabled=False).all():
+                    user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
+                    milestone_users.append({
+                        "name": dev.account.username,
+                        "points": user_grade.amount
+                    })
+            milestones.sort(key=lambda x: x["milestone id"])
+
             dat = ProjectSerializer(project).data
             dat["users"] = devs
+            dat["milestones"] = milestones
             data.append(dat)
         # serializer = ProjectSerializer(projects, many=True)
         return JsonResponse(data, safe=False)
