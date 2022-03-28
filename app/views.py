@@ -304,6 +304,11 @@ def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group,
             return test_milestone
 
 
+def get_time_spent_for_user_in_milestone(user_project, grade_milestone):
+    times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=grade_milestone).all()
+    return sum([time_spend.amount for time_spend in times_spent if grade_milestone.start <= time_spend.time <= grade_milestone.end]) / 60
+
+
 def get_milestone_data_for_project(request, id, milestone_id):
     project = Project.objects.filter(pk=id).first()
     milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
@@ -318,10 +323,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
     for user_project in user_projects:
         print(user_project.account.username)
         user_list = []
-        times_spent = TimeSpent.objects.filter(user=user_project.account).filter(
-            issue__milestone__grade_milestone=milestone).all()
-        print(f"User {user_project}")
-        total_time = sum([time_spend.amount for time_spend in times_spent if milestone.start <= time_spend.time <= milestone.end]) / 60
+        total_time = get_time_spent_for_user_in_milestone(user_project, milestone)
         promised_json.append({
             "username": user_project.account.username,
             "id": user_project.pk,
@@ -515,7 +517,8 @@ class ProjectsView(views.APIView):
                     user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
                     milestone_users.append({
                         "name": dev.account.username,
-                        "points": user_grade.amount
+                        "points": user_grade.amount,
+                        "time spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
                     })
             milestones.sort(key=lambda x: x["milestone id"])
 
