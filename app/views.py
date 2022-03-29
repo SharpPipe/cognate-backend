@@ -888,7 +888,7 @@ class FeedbackView(views.APIView):
 
     def get(self, request):
         # TODO: Add authentication, but this is tricky and not very critical.
-        dat = request.data
+        dat = request.GET
         if "type" not in dat.keys():
             return JsonResponse({"Error": "Incorrect fields"}, status=400)
         feedbacks = Feedback.objects.filter(type=dat["type"])
