@@ -183,14 +183,14 @@ def update_repository(id, user, new_users):
 
     # Refresh users
     answer_json = get_members_from_repo(repo, user, False)
-    print(answer_json)
+    # print(answer_json)
     user_objects = []
     for member in answer_json:
-        print(member)
+        # print(member)
         if member["access_level"] >= 30:
             create_user(member['username'], user_objects)
-        print(f"{member['username']}")
-        print()
+        # print(f"{member['username']}")
+        # print()
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
             user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
@@ -199,12 +199,20 @@ def update_repository(id, user, new_users):
     # Load all milestones
     endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
     answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
-    print(answer)
+    # print(answer)
     for milestone in answer:
+        # print(milestone)
         gitlab_id = milestone["id"]
-        if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
-            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
-            print(f"Created milestone {milestone['title']}")
+        matching = repo.milestones.filter(gitlab_id=gitlab_id)
+        if matching.count() == 0:
+            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"], gitlab_link=milestone["web_url"])
+            # print(f"Created milestone {milestone['title']}")
+        elif matching.count() == 1:
+            milestone_object = matching.first()
+            # TODO: Maybe record the changes somehow?
+            milestone_object.title = milestone["title"]
+            milestone_object.gitlab_link = milestone["web_url"]
+            milestone_object.save()
 
     # Load all issues
     issues = []
@@ -304,6 +312,11 @@ def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group,
             return test_milestone
 
 
+def get_time_spent_for_user_in_milestone(user_project, grade_milestone):
+    times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=grade_milestone).all()
+    return sum([time_spend.amount for time_spend in times_spent if grade_milestone.start <= time_spend.time <= grade_milestone.end]) / 60
+
+
 def get_milestone_data_for_project(request, id, milestone_id):
     project = Project.objects.filter(pk=id).first()
     milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
@@ -318,10 +331,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
     for user_project in user_projects:
         print(user_project.account.username)
         user_list = []
-        times_spent = TimeSpent.objects.filter(user=user_project.account).filter(
-            issue__milestone__grade_milestone=milestone).all()
-        print(f"User {user_project}")
-        total_time = sum([time_spend.amount for time_spend in times_spent if milestone.start <= time_spend.time <= milestone.end]) / 60
+        total_time = get_time_spent_for_user_in_milestone(user_project, milestone)
         promised_json.append({
             "username": user_project.account.username,
             "id": user_project.pk,
@@ -488,9 +498,54 @@ class ProjectsView(views.APIView):
         group = ProjectGroup.objects.filter(pk=id).first()
         if not user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
             return JsonResponse(no_access_json)
-        projects = Project.objects.filter(project_group=group)
-        serializer = ProjectSerializer(projects, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        projects = Project.objects.filter(project_group=group).all()
+        root_category = group.grade_calculation.grade_category
+        total = root_category.total
+        data = []
+        base_grade_filter = UserGrade.objects.filter(grade_category=root_category)
+        grade_milestones = [x for x in get_grade_milestones_by_projectgroup(group)]
+        for project in projects:
+            dat = ProjectSerializer(project).data
+
+            dat["teachers"] = [x.account.username for x in project.userproject_set.filter(rights="T").all()]
+            dat["mentors"] = [x.account.username for x in project.userproject_set.filter(rights="E").all()]
+
+            devs = []
+            for dev in project.userproject_set.filter(disabled=False).all():
+                dev_data = {}
+                grade_object = base_grade_filter.filter(user_project=dev).first()
+                dev_data["points"] = grade_object.amount * total
+                dev_data["name"] = dev.account.username
+                devs.append(dev_data)
+
+            milestones = []
+            for grade_milestone in grade_milestones:
+                this_milestone = {}
+                milestones.append(this_milestone)
+                this_milestone["milestone id"] = grade_milestone.milestone_order_id
+                milestone_category = grade_milestone.grade_category
+                milestone_users = []
+                this_milestone["user points"] = milestone_users
+                for dev in project.userproject_set.filter(disabled=False).all():
+                    user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
+                    milestone_users.append({
+                        "name": dev.account.username,
+                        "points": user_grade.amount,
+                        "time spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
+                    })
+                milestone_links = []
+                for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
+                    milestone_links.append(milestone.gitlab_link)
+                this_milestone["gitlab links"] = milestone_links
+                feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(grade_milestone=grade_milestone).all()
+                this_milestone["milestone feedback"] = FeedbackSerializer(feedback, many=True).data
+            milestones.sort(key=lambda x: x["milestone id"])
+
+            dat["users"] = devs
+            dat["milestones"] = milestones
+            data.append(dat)
+        # serializer = ProjectSerializer(projects, many=True)
+        return JsonResponse(data, safe=False)
 
 
 class RepositoryView(views.APIView):
@@ -833,7 +888,7 @@ class FeedbackView(views.APIView):
 
     def get(self, request):
         # TODO: Add authentication, but this is tricky and not very critical.
-        dat = request.data
+        dat = request.GET
         if "type" not in dat.keys():
             return JsonResponse({"Error": "Incorrect fields"}, status=400)
         feedbacks = Feedback.objects.filter(type=dat["type"])
@@ -859,10 +914,12 @@ class FeedbackView(views.APIView):
         for req in self.field_requirements[dat["type"]]:
             if req not in dat.keys():
                 return JsonResponse({"Error": "Incorrect fields"}, status=400)
+        for req in self.field_requirements[dat["type"]]:
             if req == "project":
                 feedback.project = Project.objects.filter(pk=dat[req]).first()
             elif req == "gradeMilestone":
-                feedback.grade_milestone = GradeMilestone.objects.filter(pk=dat[req]).first()
+                project = Project.objects.filter(pk=dat["project"]).first() if "project" in dat.keys() else UserProject.objects.filter(pk=dat["userProject"]).first().project
+                feedback.grade_milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, dat[req])
             elif req == "userProject":
                 feedback.user = GradeMilestone.objects.filter(pk=dat[req]).first()
         feedback.save()
@@ -934,3 +991,22 @@ class ProcessInfoView(views.APIView):
         if processes.count() == 0:
             return JsonResponse({"error": f"Process with id {id} and hash {hash} does not exist."}, status=404)
         return JsonResponse({"process": ProcessSerializer(processes.first()).data})
+
+
+class ProjectAddUserView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse({}, status=401)
+        project = Project.objects.filter(pk=id).first()
+        project_group = project.project_group
+        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
+        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
+        all_rights = list(user_roles_project) + list(user_roles_project_group)
+        max_rights = max([UserProject.rights_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
+        target_rights = UserProject.rights_hierarchy.index(request.data["rights"])
+        if target_rights >= max_rights:
+            return JsonResponse({}, status=401)
+        user = User.objects.filter(pk=request.data["user"]).first()
+        disabled = request.data["rights"] != "M"
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled)
+        return JsonResponse({})
