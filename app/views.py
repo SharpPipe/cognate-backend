@@ -505,6 +505,11 @@ class ProjectsView(views.APIView):
         base_grade_filter = UserGrade.objects.filter(grade_category=root_category)
         grade_milestones = [x for x in get_grade_milestones_by_projectgroup(group)]
         for project in projects:
+            dat = ProjectSerializer(project).data
+
+            dat["teachers"] = [x.account.username for x in project.userproject_set.filter(rights="T").all()]
+            dat["mentors"] = [x.account.username for x in project.userproject_set.filter(rights="E").all()]
+
             devs = []
             for dev in project.userproject_set.filter(disabled=False).all():
                 dev_data = {}
@@ -536,7 +541,6 @@ class ProjectsView(views.APIView):
                 this_milestone["milestone feedback"] = FeedbackSerializer(feedback, many=True).data
             milestones.sort(key=lambda x: x["milestone id"])
 
-            dat = ProjectSerializer(project).data
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
