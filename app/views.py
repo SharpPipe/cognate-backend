@@ -532,6 +532,8 @@ class ProjectsView(views.APIView):
                 for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
                     milestone_links.append(milestone.gitlab_link)
                 this_milestone["gitlab links"] = milestone_links
+                feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(grade_milestone=grade_milestone).all()
+                this_milestone["milestone feedback"] = FeedbackSerializer(feedback, many=True).data
             milestones.sort(key=lambda x: x["milestone id"])
 
             dat = ProjectSerializer(project).data
@@ -908,10 +910,12 @@ class FeedbackView(views.APIView):
         for req in self.field_requirements[dat["type"]]:
             if req not in dat.keys():
                 return JsonResponse({"Error": "Incorrect fields"}, status=400)
+        for req in self.field_requirements[dat["type"]]:
             if req == "project":
                 feedback.project = Project.objects.filter(pk=dat[req]).first()
             elif req == "gradeMilestone":
-                feedback.grade_milestone = GradeMilestone.objects.filter(pk=dat[req]).first()
+                project = Project.objects.filter(pk=dat["project"]).first() if "project" in dat.keys() else UserProject.objects.filter(pk=dat["userProject"]).first().project
+                feedback.grade_milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, dat[req])
             elif req == "userProject":
                 feedback.user = GradeMilestone.objects.filter(pk=dat[req]).first()
         feedback.save()
