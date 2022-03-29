@@ -522,24 +522,24 @@ class ProjectsView(views.APIView):
             for grade_milestone in grade_milestones:
                 this_milestone = {}
                 milestones.append(this_milestone)
-                this_milestone["milestone id"] = grade_milestone.milestone_order_id
+                this_milestone["milestone_id"] = grade_milestone.milestone_order_id
                 milestone_category = grade_milestone.grade_category
                 milestone_users = []
-                this_milestone["user points"] = milestone_users
+                this_milestone["user_points"] = milestone_users
                 for dev in project.userproject_set.filter(disabled=False).all():
                     user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
                     milestone_users.append({
                         "name": dev.account.username,
                         "points": user_grade.amount,
-                        "time spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
+                        "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
                     })
                 milestone_links = []
                 for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
                     milestone_links.append(milestone.gitlab_link)
-                this_milestone["gitlab links"] = milestone_links
+                this_milestone["gitlab_links"] = milestone_links
                 feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(grade_milestone=grade_milestone).all()
-                this_milestone["milestone feedback"] = FeedbackSerializer(feedback, many=True).data
-            milestones.sort(key=lambda x: x["milestone id"])
+                this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
+            milestones.sort(key=lambda x: x["milestone_id"])
 
             dat["users"] = devs
             dat["milestones"] = milestones
