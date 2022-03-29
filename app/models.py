@@ -46,11 +46,16 @@ class Repository(models.Model):
 
 
 class UserProject(models.Model):
+    rights_hierarchy = ["V", "M", "E", "T", "A", "O"]  # Sorted from least to most
+
     class Rights(models.TextChoices):
-        ADMIN = ("A", "Admin")
+        # We should define some hierarchy of these roles
         OWNER = ("O", "Owner")
-        VIEWER = ("V", "Viewer")
+        ADMIN = ("A", "Admin")
+        TEACHER = ("T", "Teacher")
+        MENTOR = ("E", "Mentor")
         MEMBER = ("M", "Member")
+        VIEWER = ("V", "Viewer")
 
     rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
@@ -63,8 +68,8 @@ class UserProject(models.Model):
 
 class UserProjectGroup(models.Model):
     class Rights(models.TextChoices):
-        ADMIN = ("A", "Admin")
         OWNER = ("O", "Owner")
+        ADMIN = ("A", "Admin")
         VIEWER = ("V", "Viewer")
 
     rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)

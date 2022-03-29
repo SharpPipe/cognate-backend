@@ -987,3 +987,22 @@ class ProcessInfoView(views.APIView):
         if processes.count() == 0:
             return JsonResponse({"error": f"Process with id {id} and hash {hash} does not exist."}, status=404)
         return JsonResponse({"process": ProcessSerializer(processes.first()).data})
+
+
+class ProjectAddUserView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse({}, status=401)
+        project = Project.objects.filter(pk=id).first()
+        project_group = project.project_group
+        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
+        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
+        all_rights = list(user_roles_project) + list(user_roles_project_group)
+        max_rights = max([UserProject.rights_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
+        target_rights = UserProject.rights_hierarchy.index(request.data["rights"])
+        if target_rights >= max_rights:
+            return JsonResponse({}, status=401)
+        user = User.objects.filter(pk=request.data["user"]).first()
+        disabled = request.data["rights"] != "M"
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled)
+        return JsonResponse({})
