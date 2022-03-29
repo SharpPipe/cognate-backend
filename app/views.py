@@ -183,14 +183,14 @@ def update_repository(id, user, new_users):
 
     # Refresh users
     answer_json = get_members_from_repo(repo, user, False)
-    print(answer_json)
+    # print(answer_json)
     user_objects = []
     for member in answer_json:
-        print(member)
+        # print(member)
         if member["access_level"] >= 30:
             create_user(member['username'], user_objects)
-        print(f"{member['username']}")
-        print()
+        # print(f"{member['username']}")
+        # print()
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
             user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
@@ -199,12 +199,20 @@ def update_repository(id, user, new_users):
     # Load all milestones
     endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
     answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
-    print(answer)
+    # print(answer)
     for milestone in answer:
+        # print(milestone)
         gitlab_id = milestone["id"]
-        if repo.milestones.filter(gitlab_id=gitlab_id).count() == 0:
-            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"])
-            print(f"Created milestone {milestone['title']}")
+        matching = repo.milestones.filter(gitlab_id=gitlab_id)
+        if matching.count() == 0:
+            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"], gitlab_link=milestone["web_url"])
+            # print(f"Created milestone {milestone['title']}")
+        elif matching.count() == 1:
+            milestone_object = matching.first()
+            # TODO: Maybe record the changes somehow?
+            milestone_object.title = milestone["title"]
+            milestone_object.gitlab_link = milestone["web_url"]
+            milestone_object.save()
 
     # Load all issues
     issues = []
@@ -520,6 +528,10 @@ class ProjectsView(views.APIView):
                         "points": user_grade.amount,
                         "time spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
                     })
+                milestone_links = []
+                for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
+                    milestone_links.append(milestone.gitlab_link)
+                this_milestone["gitlab links"] = milestone_links
             milestones.sort(key=lambda x: x["milestone id"])
 
             dat = ProjectSerializer(project).data

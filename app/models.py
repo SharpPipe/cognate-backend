@@ -111,6 +111,7 @@ class Milestone(models.Model):
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name="milestones")
     title = models.TextField(null=True, blank=True)
     gitlab_id = models.IntegerField()
+    gitlab_link = models.TextField(null=True, blank=True)
 
 
 class Issue(models.Model):
