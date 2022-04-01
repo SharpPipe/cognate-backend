@@ -49,6 +49,39 @@ def get_root_category(category):
     return category
 
 
+def recalculate_grade_category(grade_category, level=0):
+    children = grade_category.children.all()
+    child_user_grades = [UserGrade.objects.filter(grade_category=child) for child in children]
+    print(level * " " + grade_category.name)
+    for child in children:
+        recalculate_grade_category(child, level+1)
+    if grade_category.grade_type in "SMI":
+        func = {
+            "S": sum,
+            "M": max,
+            "I": min
+        }[grade_category.grade_type]
+        total_potential = func([child.total for child in children])
+        user_grades = UserGrade.objects.filter(grade_category=grade_category).all()
+        for user_grade in user_grades:
+            child_grades = []
+            for child_user_grade in child_user_grades:
+                q1 = child_user_grade.filter(user_project=user_grade.user_project)
+                q = q1.filter(grade_type="P") | q1.filter(grade_type="M")
+                child_grades.append(q.first())
+            # child_grades = [child_user_grades.filter(user_project=user_grade.user_project).filter(grade_type="P").first() for child_user_grades in child_user_grades]
+            # print(child_grades)
+            total_value = func([child.amount if child is not None else 0 for child in child_grades])
+            # print(grade_category.total)
+            # print(total_value)
+            # print(total_potential)
+            # print(total_value / total_potential)
+            # print(grade_category.total * total_value / total_potential)
+            user_grade.amount = grade_category.total * total_value / total_potential
+            user_grade.save()
+    print(level * " " + str(grade_category.pk))
+
+
 def create_user(username, user_objects):
     users = User.objects.filter(username=username)
     if users.count() > 0:
@@ -514,7 +547,7 @@ class ProjectsView(views.APIView):
             for dev in project.userproject_set.filter(disabled=False).all():
                 dev_data = {}
                 grade_object = base_grade_filter.filter(user_project=dev).first()
-                dev_data["points"] = grade_object.amount * total
+                dev_data["points"] = grade_object.amount
                 dev_data["name"] = dev.account.username
                 devs.append(dev_data)
 
@@ -1009,4 +1042,14 @@ class ProjectAddUserView(views.APIView):
         user = User.objects.filter(pk=request.data["user"]).first()
         disabled = request.data["rights"] != "M"
         UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled)
+        return JsonResponse({})
+
+
+class GradeCategoryRecalculateView(views.APIView):
+    def get(self, request, id):
+        grade_category = GradeCategory.objects.filter(pk=id).first()
+        project_group = get_root_category(grade_category).grade_calculation.project_group
+        if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+            return JsonResponse({}, status=401)
+        recalculate_grade_category(grade_category)
         return JsonResponse({})
