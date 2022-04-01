@@ -359,7 +359,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
     promised_json = []
     print(milestone)
 
-    user_projects = UserProject.objects.filter(project=project).all()
+    user_projects = UserProject.objects.filter(project=project).filter(disabled=False).all()
     print(user_projects)
     for user_project in user_projects:
         print(user_project.account.username)
