@@ -263,22 +263,29 @@ def update_repository(id, user, new_users):
         gitlab_iid = issue['iid']
         title = issue['title']
         milestone = issue['milestone']
+        url = issue["web_url"]
         issues_to_refresh.append((gitlab_iid, gitlab_id))
         issue_query = Issue.objects.filter(gitlab_id=gitlab_id)
         if issue_query.count() == 0:
             if milestone is not None:
-                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
+                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, gitlab_link=url, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
             else:
-                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid)
+                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, gitlab_link=url)
         else:
             issue_object = issue_query.first()
+            to_save = False
+            if issue_object.gitlab_link is None:
+                issue_object.gitlab_link = url
+                to_save = True
             if milestone is not None:
                 milestone_object = Milestone.objects.filter(gitlab_id=milestone['id']).first()
                 if issue_object.milestone != milestone_object:
                     if issue_object.milestone is None:
                         issue_object.has_been_moved = True
                     issue_object.milestone = milestone_object
-                    issue_object.save()
+                    to_save = True
+            if to_save:
+                issue_object.save()
 
     # Load all time spent
     time_spents = []
@@ -881,7 +888,8 @@ class ProjectMilestoneTimeSpentView(views.APIView):
                     "datetime": time_spent.time,
                     "author": time_spent.user.username,
                     "amount": time_spent.amount,
-                    "subject": time_spent.issue.title
+                    "subject": time_spent.issue.title,
+                    "gitlab_link": time_spent.issue.gitlab_link
                 })
         return JsonResponse(promised_json, safe=False)
 
