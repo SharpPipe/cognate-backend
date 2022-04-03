@@ -6,7 +6,7 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     RepositoryUpdateView, ProjectGroupUpdateView, ProjectMilestonesView, ProjectMilestoneDataView, \
     ProjectMilestoneTimeSpentView, BulkGradeView, FeedbackView, GroupSummaryMilestoneDataView, \
     ProjectMilestoneConnectionsView, MilestoneSetGradeMilestoneView, TestLoginView, ProcessInfoView, \
-    ProjectAddUserView, GradeCategoryRecalculateView
+    ProjectAddUserView, GradeCategoryRecalculateView, ParametricTimeSpentView
 
 router = routers.DefaultRouter()
 
@@ -35,5 +35,6 @@ urlpatterns = [
     path("milestones/<int:id>/grade_milestone/", MilestoneSetGradeMilestoneView.as_view(), name="set_grade_milestone_for_milestone"),
     path("", TestLoginView.as_view(), name="test_login"),
     path("process/<int:id>/<str:hash>/", ProcessInfoView.as_view(), name="get_process_info"),
-    path("projects/<int:id>/add_user/", ProjectAddUserView.as_view(), name="add_user_to_project")
+    path("projects/<int:id>/add_user/", ProjectAddUserView.as_view(), name="add_user_to_project"),
+    path("projects/<int:id>/time_spent/", ParametricTimeSpentView.as_view(), name="parametric_time_spent")
 ]
