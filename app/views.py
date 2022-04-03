@@ -456,6 +456,18 @@ def update_all_repos_in_group(project_group, user, process):
     print(f"Finished process with hash {process.hash}")
 
 
+def serialize_time_spent(times_spent):
+    return_json = []
+    for time_spent in times_spent:
+        dat = TimeSpentSerializer(time_spent).data
+        dat["title"] = dat["issue"]["title"]
+        dat["gitlab_link"] = dat["issue"]["gitlab_link"]
+        del dat["issue"]
+        dat["repo_id"] = time_spent.issue.milestone.repository.pk
+        return_json.append(dat)
+    return return_json
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
@@ -883,7 +895,7 @@ class ProjectMilestoneTimeSpentView(views.APIView):
         user_projects = UserProject.objects.filter(project=project).all()
         for user_project in user_projects:
             promised_json += TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
-        return JsonResponse(TimeSpentSerializer(promised_json, many=True).data, safe=False)
+        return JsonResponse(serialize_time_spent(promised_json), safe=False)
 
 
 class ParametricTimeSpentView(views.APIView):
@@ -905,7 +917,7 @@ class ParametricTimeSpentView(views.APIView):
             elif "end" in dat.keys():
                 base_filter = base_filter.filter(time__lte=dat["end"])
             promised_json += base_filter.all()
-        return JsonResponse(TimeSpentSerializer(promised_json, many=True).data, safe=False)
+        return JsonResponse(serialize_time_spent(promised_json), safe=False)
 
 
 class BulkGradeView(views.APIView):
