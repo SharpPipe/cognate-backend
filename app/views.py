@@ -908,6 +908,10 @@ class ParametricTimeSpentView(views.APIView):
             base_filter = TimeSpent.objects.filter(user=user_project.account)
             if "start" in dat.keys() and "end" in dat.keys():
                 base_filter = base_filter.filter(time__range=[dat["start"], dat["end"]])
+            elif "start" in dat.keys():
+                base_filter = base_filter.filter(time__gte=dat["start"])
+            elif "end" in dat.keys():
+                base_filter = base_filter.filter(time__lte=dat["end"])
             results = base_filter.all()
             for time_spent in results:
                 promised_json.append({
