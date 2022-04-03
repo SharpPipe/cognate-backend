@@ -894,6 +894,32 @@ class ProjectMilestoneTimeSpentView(views.APIView):
         return JsonResponse(promised_json, safe=False)
 
 
+class ParametricTimeSpentView(views.APIView):
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        if not user_has_access_to_project(request.user, project):
+            return JsonResponse(no_access_json)
+        user_projects = UserProject.objects.filter(project=project).all()
+        dat = request.GET
+        promised_json = []
+        for user_project in user_projects:
+            base_filter = TimeSpent.objects.filter(user=user_project.account)
+            if "start" in dat.keys() and "end" in dat.keys():
+                base_filter = base_filter.filter(time__range=[dat["start"], dat["end"]])
+            results = base_filter.all()
+            for time_spent in results:
+                promised_json.append({
+                    "datetime": time_spent.time,
+                    "author": time_spent.user.username,
+                    "amount": time_spent.amount,
+                    "subject": time_spent.issue.title,
+                    "gitlab_link": time_spent.issue.gitlab_link
+                })
+        return JsonResponse(promised_json, safe=False)
+
+
 class BulkGradeView(views.APIView):
     def post(self, request):
         if request.user.is_anonymous:
