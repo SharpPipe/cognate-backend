@@ -18,7 +18,7 @@ from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
-    ProcessSerializer, FeedbackSerializer
+    ProcessSerializer, FeedbackSerializer, TimeSpentSerializer
 
 
 def get_members_from_repo(repo, user, get_all):
@@ -882,16 +882,8 @@ class ProjectMilestoneTimeSpentView(views.APIView):
 
         user_projects = UserProject.objects.filter(project=project).all()
         for user_project in user_projects:
-            times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
-            for time_spent in times_spent:
-                promised_json.append({
-                    "datetime": time_spent.time,
-                    "author": time_spent.user.username,
-                    "amount": time_spent.amount,
-                    "subject": time_spent.issue.title,
-                    "gitlab_link": time_spent.issue.gitlab_link
-                })
-        return JsonResponse(promised_json, safe=False)
+            promised_json += TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
+        return JsonResponse(TimeSpentSerializer(promised_json, many=True).data, safe=False)
 
 
 class ParametricTimeSpentView(views.APIView):
@@ -912,16 +904,8 @@ class ParametricTimeSpentView(views.APIView):
                 base_filter = base_filter.filter(time__gte=dat["start"])
             elif "end" in dat.keys():
                 base_filter = base_filter.filter(time__lte=dat["end"])
-            results = base_filter.all()
-            for time_spent in results:
-                promised_json.append({
-                    "datetime": time_spent.time,
-                    "author": time_spent.user.username,
-                    "amount": time_spent.amount,
-                    "subject": time_spent.issue.title,
-                    "gitlab_link": time_spent.issue.gitlab_link
-                })
-        return JsonResponse(promised_json, safe=False)
+            promised_json += base_filter.all()
+        return JsonResponse(TimeSpentSerializer(promised_json, many=True).data, safe=False)
 
 
 class BulkGradeView(views.APIView):

@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 
 from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeMilestone, UserGrade, UserProject, \
-    Milestone, Process, Feedback
+    Milestone, Process, Feedback, TimeSpent, Issue
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -141,3 +141,18 @@ class FeedbackSerializer(serializers.ModelSerializer):
     class Meta:
         model = Feedback
         fields = ['text', 'time', 'commenter']
+
+
+class LimitedIssueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Issue
+        fields = ['title', 'gitlab_link']
+
+
+class TimeSpentSerializer(serializers.ModelSerializer):
+    user = serializers.SlugRelatedField(slug_field="username", read_only=True)
+    issue = LimitedIssueSerializer()
+
+    class Meta:
+        model = TimeSpent
+        fields = ['time', 'amount', 'user', 'issue']
