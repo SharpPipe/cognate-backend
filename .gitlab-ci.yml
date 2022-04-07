@@ -3,15 +3,8 @@ services:
   - docker:dind
 
 stages:
-  - test
   - deploy
-
-test:
-  tags:
-    - cognate
-  stage: test
-  script:
-    - echo "no tests written yet :("
+  - deploy-dev
 
 deploy:
   tags:
@@ -29,3 +22,17 @@ deploy:
     - docker exec django sh -c "service cron start"
   environment: main
 
+deploy-dev:
+  tags:
+    - cognate-dev
+  stage: deploy
+  only:
+    refs:
+      - develop
+  before_script:
+    - docker-compose version
+  script:
+    - echo "Building Docker and Postgre"
+    - docker-compose stop
+    - docker-compose up -d --build
+    - docker exec django sh -c "service cron start"
