@@ -14,7 +14,8 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process, Committer, \
+    Commit
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
@@ -318,11 +319,47 @@ def update_repository(id, user, new_users):
                 issue = Issue.objects.filter(gitlab_id=id).first()
                 time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
         else:
-            print(f"Unknown message with content {body}")
+            pass
+            # print(f"Unknown message with content {body}")
 
     # Load all commits
     # TODO: Load commit data
-
+    print("Should load commits")
+    endpoint_part = f"/projects/{repo.gitlab_id}/repository/commits"
+    counter = 1
+    commits = []
+    while True:
+        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&with_stats=true&page=" + str(counter)).json()
+        commits += answer
+        if len(answer) < 100:
+            break
+        counter += 1
+    for commit in commits:
+        commit_hash = commit["id"]
+        if Commit.objects.filter(hash=commit_hash).count() > 0:
+            continue
+        commit_time = commit["created_at"]
+        message = commit["message"]
+        lines_added = commit["stats"]["additions"]
+        lines_removed = commit["stats"]["deletions"]
+        name = commit["committer_name"]
+        email = commit["committer_email"]
+        committers = Committer.objects.filter(name=name).filter(email=email)
+        if committers.count() > 0:
+            committer = committers.first()
+        else:
+            committer = Committer.objects.create(name=name, email=email)
+            users = User.objects.filter(username=name)
+            if users.count() > 0:
+                committer.account = users.first()
+                committer.save()
+            if "@" in email:
+                users = User.objects.filter(username=email.split("@")[0])
+                if users.count() > 0:
+                    committer.account = users.first()
+                    committer.save()
+        Commit.objects.create(hash=commit_hash, time=commit_time, message=message, lines_added=lines_added, lines_removed=lines_removed, author=committer, repository=repo)
+        print(commit)
     return repo
 
 
@@ -608,8 +645,12 @@ class RepositoryView(views.APIView):
         if not user_has_access_to_project(request.user, project):
             return JsonResponse(no_access_json)
         repos = Repository.objects.filter(project=project)
-        serializer = RepositorySerializer(repos, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        data = {}
+        data["repositories"] = RepositorySerializer(repos, many=True).data
+        for repo in repos.all():
+            for commit in repo.commit_set.all():
+                print(commit)
+        return JsonResponse(data, safe=False)
 
 
 class ProfileView(views.APIView):
