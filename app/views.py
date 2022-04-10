@@ -647,9 +647,31 @@ class RepositoryView(views.APIView):
         repos = Repository.objects.filter(project=project)
         data = {}
         data["repositories"] = RepositorySerializer(repos, many=True).data
+        devs = {x.account.username: {
+            "time_spent": 0,
+            "lines_added": 0,
+            "lines_removed": 0
+        } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
         for repo in repos.all():
             for commit in repo.commit_set.all():
-                print(commit)
+                user = commit.author.account
+                if user is not None and user.username in devs.keys():
+                    # TODO: think of a better way to differentiate between "actual" lines and just pushing large files
+                    if commit.lines_added < 2500:
+                        devs[user.username]["lines_added"] += commit.lines_added
+                    if commit.lines_removed < 2500:
+                        devs[user.username]["lines_removed"] += commit.lines_removed
+        for dev in UserProject.objects.filter(project=project).filter(disabled=False).all():
+            times_spent = TimeSpent.objects.filter(user=dev.account).filter(issue__milestone__repository__project=project).all()
+            devs[dev.account.username]["time_spent"] = sum([time_spend.amount for time_spend in times_spent]) / 60
+        dev_list = []
+        for key, val in devs.items():
+            val["username"] = key
+            dev_list.append(val)
+        data["developers"] = dev_list
+        data["project"] = {}
+        for key in ["time_spent", "lines_added", "lines_removed"]:
+            data["project"][key] = sum([x[key] for x in dev_list])
         return JsonResponse(data, safe=False)
 
 
