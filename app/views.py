@@ -505,6 +505,49 @@ def serialize_time_spent(times_spent):
     return return_json
 
 
+def get_grademilestone_data_for_project(project, grade_milestones, detailed=False):
+    milestones = []
+    for grade_milestone in grade_milestones:
+        this_milestone = {}
+        milestones.append(this_milestone)
+        this_milestone["milestone_id"] = grade_milestone.milestone_order_id
+        milestone_category = grade_milestone.grade_category
+        milestone_users = []
+        this_milestone["user_points"] = milestone_users
+        graded = False
+        for dev in project.userproject_set.filter(disabled=False).all():
+            user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
+            # TODO: think of a better way to determine this
+            if user_grade.amount > 0:
+                graded = True
+            dev_data = {
+                "name": dev.account.username,
+                "points": user_grade.amount,
+                "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
+            }
+            if detailed:
+                grades = {}
+                for sub_grade in UserGrade.objects.filter(grade_category__parent_category=milestone_category).filter(user_project=dev).filter(grade_type="M").all():
+                    grades[sub_grade.grade_category.name] = sub_grade.amount
+                dev_data["grades"] = grades
+            milestone_users.append(dev_data)
+        milestone_links = []
+        for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
+            milestone_links.append(milestone.gitlab_link)
+        this_milestone["gitlab_links"] = milestone_links
+        feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(
+            grade_milestone=grade_milestone).all()
+        this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
+
+        if detailed:
+            this_milestone["graded"] = graded
+            this_milestone["start_time"] = grade_milestone.start
+            this_milestone["end_time"] = grade_milestone.end
+
+    milestones.sort(key=lambda x: x["milestone_id"])
+    return milestones
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
@@ -607,28 +650,7 @@ class ProjectsView(views.APIView):
                 dev_data["name"] = dev.account.username
                 devs.append(dev_data)
 
-            milestones = []
-            for grade_milestone in grade_milestones:
-                this_milestone = {}
-                milestones.append(this_milestone)
-                this_milestone["milestone_id"] = grade_milestone.milestone_order_id
-                milestone_category = grade_milestone.grade_category
-                milestone_users = []
-                this_milestone["user_points"] = milestone_users
-                for dev in project.userproject_set.filter(disabled=False).all():
-                    user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
-                    milestone_users.append({
-                        "name": dev.account.username,
-                        "points": user_grade.amount,
-                        "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
-                    })
-                milestone_links = []
-                for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
-                    milestone_links.append(milestone.gitlab_link)
-                this_milestone["gitlab_links"] = milestone_links
-                feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(grade_milestone=grade_milestone).all()
-                this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
-            milestones.sort(key=lambda x: x["milestone_id"])
+            milestones = get_grademilestone_data_for_project(project, grade_milestones)
 
             dat["users"] = devs
             dat["milestones"] = milestones
@@ -644,6 +666,7 @@ class RepositoryView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         if not user_has_access_to_project(request.user, project):
             return JsonResponse(no_access_json)
+        grade_milestones = [x for x in get_grade_milestones_by_projectgroup(project.project_group)]
         repos = Repository.objects.filter(project=project)
         data = {}
         data["repositories"] = RepositorySerializer(repos, many=True).data
@@ -672,6 +695,7 @@ class RepositoryView(views.APIView):
         data["project"] = {}
         for key in ["time_spent", "lines_added", "lines_removed"]:
             data["project"][key] = sum([x[key] for x in dev_list])
+        data["milestones"] = get_grademilestone_data_for_project(project, grade_milestones, True)
         return JsonResponse(data, safe=False)
 
 
