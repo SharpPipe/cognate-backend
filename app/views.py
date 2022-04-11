@@ -227,7 +227,7 @@ def update_repository(id, user, new_users):
         # print()
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
-            user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
+            user_project = UserProject.objects.create(rights="M", account=user_object, project=project, colour=random_colour())
             add_user_grade_recursive(user_project, grade_category_root)
 
     # Load all milestones
@@ -411,6 +411,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
         total_time = get_time_spent_for_user_in_milestone(user_project, milestone)
         promised_json.append({
             "username": user_project.account.username,
+            "colour": user_project.colour,
             "id": user_project.pk,
             "spent_time": total_time,
             "data": user_list
@@ -458,6 +459,14 @@ def user_has_access_to_project_group_with_security_level(user, project_group, ro
         if user_group.rights in roles:
             return True
     return False
+
+
+def user_has_access_to_project_with_security_level(user, project, roles):
+    user_projects = UserProject.objects.filter(project=project).filter(account=user)
+    for user_project in user_projects.all():
+        if user_project.rights in roles:
+            return True
+    return user_has_access_to_project_group_with_security_level(user, project.project_group, roles)
 
 
 def user_has_access_to_project(user, project):
@@ -522,6 +531,7 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
                 graded = True
             dev_data = {
                 "name": dev.account.username,
+                "colour": dev.colour,
                 "points": user_grade.amount,
                 "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
             }
@@ -546,6 +556,10 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
 
     milestones.sort(key=lambda x: x["milestone_id"])
     return milestones
+
+
+def random_colour(with_alpha=False):
+    return "".join([random.choice("0123456789abcdef") for _ in range(8 if with_alpha else 6)])
 
 
 class ProjectGroupView(views.APIView):
@@ -617,7 +631,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
                     continue
-                user_project = UserProject.objects.create(rights="M", account=user, project=project_object)
+                user_project = UserProject.objects.create(rights="M", account=user, project=project_object, colour=random_colour())
                 add_user_grade(user_project, group)
 
         return JsonResponse({"data": data})
@@ -648,6 +662,7 @@ class ProjectsView(views.APIView):
                 grade_object = base_grade_filter.filter(user_project=dev).first()
                 dev_data["points"] = grade_object.amount
                 dev_data["name"] = dev.account.username
+                dev_data["colour"] = dev.colour
                 devs.append(dev_data)
 
             milestones = get_grademilestone_data_for_project(project, grade_milestones)
@@ -673,7 +688,8 @@ class RepositoryView(views.APIView):
         devs = {x.account.username: {
             "time_spent": 0,
             "lines_added": 0,
-            "lines_removed": 0
+            "lines_removed": 0,
+            "colour": x.colour
         } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
         for repo in repos.all():
             for commit in repo.commit_set.all():
@@ -846,7 +862,7 @@ class RootAddUsers(views.APIView):
                             continue
                         if member["username"] == user.username:
                             if UserProject.objects.filter(account=user).filter(project=project).count() == 0:
-                                user_project = UserProject.objects.create(rights="M", account=user, project=project)
+                                user_project = UserProject.objects.create(rights="M", account=user, project=project, colour=random_colour())
                                 add_user_grade_recursive(user_project, grade_category_root)
                                 users_found.append(user.username)
                                 print(f"{member['username']} found in project {project.name}")
@@ -1162,7 +1178,7 @@ class ProjectAddUserView(views.APIView):
             return JsonResponse({}, status=401)
         user = User.objects.filter(pk=request.data["user"]).first()
         disabled = request.data["rights"] != "M"
-        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled)
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled, colour=random_colour())
         return JsonResponse({})
 
 
@@ -1173,4 +1189,19 @@ class GradeCategoryRecalculateView(views.APIView):
         if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse({}, status=401)
         recalculate_grade_category(grade_category)
+        return JsonResponse({})
+
+
+class ChangeDevColourView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
+        user_project = UserProject.objects.filter(project=id).filter(account__username=request.data["username"])
+        if user_project.count() == 0:
+            return JsonResponse({}, 404)
+        user_project = user_project.first()
+        if not (user_has_access_to_project_with_security_level(request.user, user_project.project, ["O", "A", "T", "E"]) or user_project.account == request.user):
+            return JsonResponse({}, 404)
+        user_project.colour = request.data["colour"]
+        user_project.save()
         return JsonResponse({})
