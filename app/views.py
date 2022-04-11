@@ -461,6 +461,14 @@ def user_has_access_to_project_group_with_security_level(user, project_group, ro
     return False
 
 
+def user_has_access_to_project_with_security_level(user, project, roles):
+    user_projects = UserProject.objects.filter(project=project).filter(account=user)
+    for user_project in user_projects.all():
+        if user_project.rights in roles:
+            return True
+    return user_has_access_to_project_group_with_security_level(user, project.project_group, roles)
+
+
 def user_has_access_to_project(user, project):
     user_projects = UserProject.objects.filter(project=project).filter(account=user)
     if user_projects.count() > 0:
@@ -1181,4 +1189,19 @@ class GradeCategoryRecalculateView(views.APIView):
         if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse({}, status=401)
         recalculate_grade_category(grade_category)
+        return JsonResponse({})
+
+
+class ChangeDevColourView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
+        user_project = UserProject.objects.filter(project=id).filter(account__username=request.data["username"])
+        if user_project.count() == 0:
+            return JsonResponse({}, 404)
+        user_project = user_project.first()
+        if not (user_has_access_to_project_with_security_level(request.user, user_project.project, ["O", "A", "T", "E"]) or user_project.account == request.user):
+            return JsonResponse({}, 404)
+        user_project.colour = request.data["colour"]
+        user_project.save()
         return JsonResponse({})
