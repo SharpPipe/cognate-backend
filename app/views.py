@@ -227,7 +227,7 @@ def update_repository(id, user, new_users):
         # print()
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
-            user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
+            user_project = UserProject.objects.create(rights="M", account=user_object, project=project, colour=random_colour())
             add_user_grade_recursive(user_project, grade_category_root)
 
     # Load all milestones
@@ -411,6 +411,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
         total_time = get_time_spent_for_user_in_milestone(user_project, milestone)
         promised_json.append({
             "username": user_project.account.username,
+            "colour": user_project.colour,
             "id": user_project.pk,
             "spent_time": total_time,
             "data": user_list
@@ -522,6 +523,7 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
                 graded = True
             dev_data = {
                 "name": dev.account.username,
+                "colour": dev.colour,
                 "points": user_grade.amount,
                 "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
             }
@@ -652,6 +654,7 @@ class ProjectsView(views.APIView):
                 grade_object = base_grade_filter.filter(user_project=dev).first()
                 dev_data["points"] = grade_object.amount
                 dev_data["name"] = dev.account.username
+                dev_data["colour"] = dev.colour
                 devs.append(dev_data)
 
             milestones = get_grademilestone_data_for_project(project, grade_milestones)
@@ -677,7 +680,8 @@ class RepositoryView(views.APIView):
         devs = {x.account.username: {
             "time_spent": 0,
             "lines_added": 0,
-            "lines_removed": 0
+            "lines_removed": 0,
+            "colour": x.colour
         } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
         for repo in repos.all():
             for commit in repo.commit_set.all():
