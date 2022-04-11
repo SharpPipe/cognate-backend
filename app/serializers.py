@@ -65,7 +65,7 @@ class UserProjectSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserProject
-        fields = ['id', 'account']
+        fields = ['id', 'account', 'colour']
 
 
 class UserGradeSerializer(serializers.ModelSerializer):

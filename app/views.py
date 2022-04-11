@@ -14,7 +14,8 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process, Committer, \
+    Commit
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
@@ -226,7 +227,7 @@ def update_repository(id, user, new_users):
         # print()
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
-            user_project = UserProject.objects.create(rights="M", account=user_object, project=project)
+            user_project = UserProject.objects.create(rights="M", account=user_object, project=project, colour=random_colour())
             add_user_grade_recursive(user_project, grade_category_root)
 
     # Load all milestones
@@ -318,11 +319,47 @@ def update_repository(id, user, new_users):
                 issue = Issue.objects.filter(gitlab_id=id).first()
                 time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
         else:
-            print(f"Unknown message with content {body}")
+            pass
+            # print(f"Unknown message with content {body}")
 
     # Load all commits
     # TODO: Load commit data
-
+    print("Should load commits")
+    endpoint_part = f"/projects/{repo.gitlab_id}/repository/commits"
+    counter = 1
+    commits = []
+    while True:
+        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&with_stats=true&page=" + str(counter)).json()
+        commits += answer
+        if len(answer) < 100:
+            break
+        counter += 1
+    for commit in commits:
+        commit_hash = commit["id"]
+        if Commit.objects.filter(hash=commit_hash).count() > 0:
+            continue
+        commit_time = commit["created_at"]
+        message = commit["message"]
+        lines_added = commit["stats"]["additions"]
+        lines_removed = commit["stats"]["deletions"]
+        name = commit["committer_name"]
+        email = commit["committer_email"]
+        committers = Committer.objects.filter(name=name).filter(email=email)
+        if committers.count() > 0:
+            committer = committers.first()
+        else:
+            committer = Committer.objects.create(name=name, email=email)
+            users = User.objects.filter(username=name)
+            if users.count() > 0:
+                committer.account = users.first()
+                committer.save()
+            if "@" in email:
+                users = User.objects.filter(username=email.split("@")[0])
+                if users.count() > 0:
+                    committer.account = users.first()
+                    committer.save()
+        Commit.objects.create(hash=commit_hash, time=commit_time, message=message, lines_added=lines_added, lines_removed=lines_removed, author=committer, repository=repo)
+        print(commit)
     return repo
 
 
@@ -374,6 +411,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
         total_time = get_time_spent_for_user_in_milestone(user_project, milestone)
         promised_json.append({
             "username": user_project.account.username,
+            "colour": user_project.colour,
             "id": user_project.pk,
             "spent_time": total_time,
             "data": user_list
@@ -423,6 +461,14 @@ def user_has_access_to_project_group_with_security_level(user, project_group, ro
     return False
 
 
+def user_has_access_to_project_with_security_level(user, project, roles):
+    user_projects = UserProject.objects.filter(project=project).filter(account=user)
+    for user_project in user_projects.all():
+        if user_project.rights in roles:
+            return True
+    return user_has_access_to_project_group_with_security_level(user, project.project_group, roles)
+
+
 def user_has_access_to_project(user, project):
     user_projects = UserProject.objects.filter(project=project).filter(account=user)
     if user_projects.count() > 0:
@@ -463,9 +509,57 @@ def serialize_time_spent(times_spent):
         dat["title"] = dat["issue"]["title"]
         dat["gitlab_link"] = dat["issue"]["gitlab_link"]
         del dat["issue"]
-        dat["repo_id"] = time_spent.issue.milestone.repository.pk
+        dat["repo_id"] = time_spent.issue.milestone.repository.pk if time_spent.issue.milestone is not None else -1
         return_json.append(dat)
     return return_json
+
+
+def get_grademilestone_data_for_project(project, grade_milestones, detailed=False):
+    milestones = []
+    for grade_milestone in grade_milestones:
+        this_milestone = {}
+        milestones.append(this_milestone)
+        this_milestone["milestone_id"] = grade_milestone.milestone_order_id
+        milestone_category = grade_milestone.grade_category
+        milestone_users = []
+        this_milestone["user_points"] = milestone_users
+        graded = False
+        for dev in project.userproject_set.filter(disabled=False).all():
+            user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
+            # TODO: think of a better way to determine this
+            if user_grade.amount > 0:
+                graded = True
+            dev_data = {
+                "name": dev.account.username,
+                "colour": dev.colour,
+                "points": user_grade.amount,
+                "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
+            }
+            if detailed:
+                grades = {}
+                for sub_grade in UserGrade.objects.filter(grade_category__parent_category=milestone_category).filter(user_project=dev).filter(grade_type="M").all():
+                    grades[sub_grade.grade_category.name] = sub_grade.amount
+                dev_data["grades"] = grades
+            milestone_users.append(dev_data)
+        milestone_links = []
+        for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
+            milestone_links.append(milestone.gitlab_link)
+        this_milestone["gitlab_links"] = milestone_links
+        feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(
+            grade_milestone=grade_milestone).all()
+        this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
+
+        if detailed:
+            this_milestone["graded"] = graded
+            this_milestone["start_time"] = grade_milestone.start
+            this_milestone["end_time"] = grade_milestone.end
+
+    milestones.sort(key=lambda x: x["milestone_id"])
+    return milestones
+
+
+def random_colour(with_alpha=False):
+    return "".join([random.choice("0123456789abcdef") for _ in range(8 if with_alpha else 6)])
 
 
 class ProjectGroupView(views.APIView):
@@ -537,7 +631,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
                     continue
-                user_project = UserProject.objects.create(rights="M", account=user, project=project_object)
+                user_project = UserProject.objects.create(rights="M", account=user, project=project_object, colour=random_colour())
                 add_user_grade(user_project, group)
 
         return JsonResponse({"data": data})
@@ -568,30 +662,10 @@ class ProjectsView(views.APIView):
                 grade_object = base_grade_filter.filter(user_project=dev).first()
                 dev_data["points"] = grade_object.amount
                 dev_data["name"] = dev.account.username
+                dev_data["colour"] = dev.colour
                 devs.append(dev_data)
 
-            milestones = []
-            for grade_milestone in grade_milestones:
-                this_milestone = {}
-                milestones.append(this_milestone)
-                this_milestone["milestone_id"] = grade_milestone.milestone_order_id
-                milestone_category = grade_milestone.grade_category
-                milestone_users = []
-                this_milestone["user_points"] = milestone_users
-                for dev in project.userproject_set.filter(disabled=False).all():
-                    user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
-                    milestone_users.append({
-                        "name": dev.account.username,
-                        "points": user_grade.amount,
-                        "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
-                    })
-                milestone_links = []
-                for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
-                    milestone_links.append(milestone.gitlab_link)
-                this_milestone["gitlab_links"] = milestone_links
-                feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(grade_milestone=grade_milestone).all()
-                this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
-            milestones.sort(key=lambda x: x["milestone_id"])
+            milestones = get_grademilestone_data_for_project(project, grade_milestones)
 
             dat["users"] = devs
             dat["milestones"] = milestones
@@ -607,9 +681,38 @@ class RepositoryView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         if not user_has_access_to_project(request.user, project):
             return JsonResponse(no_access_json)
+        grade_milestones = [x for x in get_grade_milestones_by_projectgroup(project.project_group)]
         repos = Repository.objects.filter(project=project)
-        serializer = RepositorySerializer(repos, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        data = {}
+        data["repositories"] = RepositorySerializer(repos, many=True).data
+        devs = {x.account.username: {
+            "time_spent": 0,
+            "lines_added": 0,
+            "lines_removed": 0,
+            "colour": x.colour
+        } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
+        for repo in repos.all():
+            for commit in repo.commit_set.all():
+                user = commit.author.account
+                if user is not None and user.username in devs.keys():
+                    # TODO: think of a better way to differentiate between "actual" lines and just pushing large files
+                    if commit.lines_added < 2500:
+                        devs[user.username]["lines_added"] += commit.lines_added
+                    if commit.lines_removed < 2500:
+                        devs[user.username]["lines_removed"] += commit.lines_removed
+        for dev in UserProject.objects.filter(project=project).filter(disabled=False).all():
+            times_spent = TimeSpent.objects.filter(user=dev.account).filter(issue__milestone__repository__project=project).all()
+            devs[dev.account.username]["time_spent"] = sum([time_spend.amount for time_spend in times_spent]) / 60
+        dev_list = []
+        for key, val in devs.items():
+            val["username"] = key
+            dev_list.append(val)
+        data["developers"] = dev_list
+        data["project"] = {}
+        for key in ["time_spent", "lines_added", "lines_removed"]:
+            data["project"][key] = sum([x[key] for x in dev_list])
+        data["milestones"] = get_grademilestone_data_for_project(project, grade_milestones, True)
+        return JsonResponse(data, safe=False)
 
 
 class ProfileView(views.APIView):
@@ -759,7 +862,7 @@ class RootAddUsers(views.APIView):
                             continue
                         if member["username"] == user.username:
                             if UserProject.objects.filter(account=user).filter(project=project).count() == 0:
-                                user_project = UserProject.objects.create(rights="M", account=user, project=project)
+                                user_project = UserProject.objects.create(rights="M", account=user, project=project, colour=random_colour())
                                 add_user_grade_recursive(user_project, grade_category_root)
                                 users_found.append(user.username)
                                 print(f"{member['username']} found in project {project.name}")
@@ -1075,7 +1178,7 @@ class ProjectAddUserView(views.APIView):
             return JsonResponse({}, status=401)
         user = User.objects.filter(pk=request.data["user"]).first()
         disabled = request.data["rights"] != "M"
-        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled)
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled, colour=random_colour())
         return JsonResponse({})
 
 
@@ -1086,4 +1189,19 @@ class GradeCategoryRecalculateView(views.APIView):
         if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse({}, status=401)
         recalculate_grade_category(grade_category)
+        return JsonResponse({})
+
+
+class ChangeDevColourView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(anonymous_json)
+        user_project = UserProject.objects.filter(project=id).filter(account__username=request.data["username"])
+        if user_project.count() == 0:
+            return JsonResponse({}, 404)
+        user_project = user_project.first()
+        if not (user_has_access_to_project_with_security_level(request.user, user_project.project, ["O", "A", "T", "E"]) or user_project.account == request.user):
+            return JsonResponse({}, 404)
+        user_project.colour = request.data["colour"]
+        user_project.save()
         return JsonResponse({})
