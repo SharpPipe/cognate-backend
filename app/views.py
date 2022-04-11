@@ -548,6 +548,10 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
     return milestones
 
 
+def random_colour(with_alpha=False):
+    return "".join([random.choice("0123456789abcdef") for _ in range(8 if with_alpha else 6)])
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
@@ -617,7 +621,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
                     continue
-                user_project = UserProject.objects.create(rights="M", account=user, project=project_object)
+                user_project = UserProject.objects.create(rights="M", account=user, project=project_object, colour=random_colour())
                 add_user_grade(user_project, group)
 
         return JsonResponse({"data": data})
@@ -846,7 +850,7 @@ class RootAddUsers(views.APIView):
                             continue
                         if member["username"] == user.username:
                             if UserProject.objects.filter(account=user).filter(project=project).count() == 0:
-                                user_project = UserProject.objects.create(rights="M", account=user, project=project)
+                                user_project = UserProject.objects.create(rights="M", account=user, project=project, colour=random_colour())
                                 add_user_grade_recursive(user_project, grade_category_root)
                                 users_found.append(user.username)
                                 print(f"{member['username']} found in project {project.name}")
@@ -1162,7 +1166,7 @@ class ProjectAddUserView(views.APIView):
             return JsonResponse({}, status=401)
         user = User.objects.filter(pk=request.data["user"]).first()
         disabled = request.data["rights"] != "M"
-        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled)
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled, colour=random_colour())
         return JsonResponse({})
 
 
