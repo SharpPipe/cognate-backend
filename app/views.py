@@ -14,7 +14,8 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process
+    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process, Committer, \
+    Commit
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
@@ -318,11 +319,47 @@ def update_repository(id, user, new_users):
                 issue = Issue.objects.filter(gitlab_id=id).first()
                 time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
         else:
-            print(f"Unknown message with content {body}")
+            pass
+            # print(f"Unknown message with content {body}")
 
     # Load all commits
     # TODO: Load commit data
-
+    print("Should load commits")
+    endpoint_part = f"/projects/{repo.gitlab_id}/repository/commits"
+    counter = 1
+    commits = []
+    while True:
+        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&with_stats=true&page=" + str(counter)).json()
+        commits += answer
+        if len(answer) < 100:
+            break
+        counter += 1
+    for commit in commits:
+        commit_hash = commit["id"]
+        if Commit.objects.filter(hash=commit_hash).count() > 0:
+            continue
+        commit_time = commit["created_at"]
+        message = commit["message"]
+        lines_added = commit["stats"]["additions"]
+        lines_removed = commit["stats"]["deletions"]
+        name = commit["committer_name"]
+        email = commit["committer_email"]
+        committers = Committer.objects.filter(name=name).filter(email=email)
+        if committers.count() > 0:
+            committer = committers.first()
+        else:
+            committer = Committer.objects.create(name=name, email=email)
+            users = User.objects.filter(username=name)
+            if users.count() > 0:
+                committer.account = users.first()
+                committer.save()
+            if "@" in email:
+                users = User.objects.filter(username=email.split("@")[0])
+                if users.count() > 0:
+                    committer.account = users.first()
+                    committer.save()
+        Commit.objects.create(hash=commit_hash, time=commit_time, message=message, lines_added=lines_added, lines_removed=lines_removed, author=committer, repository=repo)
+        print(commit)
     return repo
 
 
@@ -468,6 +505,49 @@ def serialize_time_spent(times_spent):
     return return_json
 
 
+def get_grademilestone_data_for_project(project, grade_milestones, detailed=False):
+    milestones = []
+    for grade_milestone in grade_milestones:
+        this_milestone = {}
+        milestones.append(this_milestone)
+        this_milestone["milestone_id"] = grade_milestone.milestone_order_id
+        milestone_category = grade_milestone.grade_category
+        milestone_users = []
+        this_milestone["user_points"] = milestone_users
+        graded = False
+        for dev in project.userproject_set.filter(disabled=False).all():
+            user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
+            # TODO: think of a better way to determine this
+            if user_grade.amount > 0:
+                graded = True
+            dev_data = {
+                "name": dev.account.username,
+                "points": user_grade.amount,
+                "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
+            }
+            if detailed:
+                grades = {}
+                for sub_grade in UserGrade.objects.filter(grade_category__parent_category=milestone_category).filter(user_project=dev).filter(grade_type="M").all():
+                    grades[sub_grade.grade_category.name] = sub_grade.amount
+                dev_data["grades"] = grades
+            milestone_users.append(dev_data)
+        milestone_links = []
+        for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
+            milestone_links.append(milestone.gitlab_link)
+        this_milestone["gitlab_links"] = milestone_links
+        feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(
+            grade_milestone=grade_milestone).all()
+        this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
+
+        if detailed:
+            this_milestone["graded"] = graded
+            this_milestone["start_time"] = grade_milestone.start
+            this_milestone["end_time"] = grade_milestone.end
+
+    milestones.sort(key=lambda x: x["milestone_id"])
+    return milestones
+
+
 class ProjectGroupView(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
@@ -570,28 +650,7 @@ class ProjectsView(views.APIView):
                 dev_data["name"] = dev.account.username
                 devs.append(dev_data)
 
-            milestones = []
-            for grade_milestone in grade_milestones:
-                this_milestone = {}
-                milestones.append(this_milestone)
-                this_milestone["milestone_id"] = grade_milestone.milestone_order_id
-                milestone_category = grade_milestone.grade_category
-                milestone_users = []
-                this_milestone["user_points"] = milestone_users
-                for dev in project.userproject_set.filter(disabled=False).all():
-                    user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
-                    milestone_users.append({
-                        "name": dev.account.username,
-                        "points": user_grade.amount,
-                        "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
-                    })
-                milestone_links = []
-                for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
-                    milestone_links.append(milestone.gitlab_link)
-                this_milestone["gitlab_links"] = milestone_links
-                feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(grade_milestone=grade_milestone).all()
-                this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
-            milestones.sort(key=lambda x: x["milestone_id"])
+            milestones = get_grademilestone_data_for_project(project, grade_milestones)
 
             dat["users"] = devs
             dat["milestones"] = milestones
@@ -607,9 +666,37 @@ class RepositoryView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         if not user_has_access_to_project(request.user, project):
             return JsonResponse(no_access_json)
+        grade_milestones = [x for x in get_grade_milestones_by_projectgroup(project.project_group)]
         repos = Repository.objects.filter(project=project)
-        serializer = RepositorySerializer(repos, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        data = {}
+        data["repositories"] = RepositorySerializer(repos, many=True).data
+        devs = {x.account.username: {
+            "time_spent": 0,
+            "lines_added": 0,
+            "lines_removed": 0
+        } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
+        for repo in repos.all():
+            for commit in repo.commit_set.all():
+                user = commit.author.account
+                if user is not None and user.username in devs.keys():
+                    # TODO: think of a better way to differentiate between "actual" lines and just pushing large files
+                    if commit.lines_added < 2500:
+                        devs[user.username]["lines_added"] += commit.lines_added
+                    if commit.lines_removed < 2500:
+                        devs[user.username]["lines_removed"] += commit.lines_removed
+        for dev in UserProject.objects.filter(project=project).filter(disabled=False).all():
+            times_spent = TimeSpent.objects.filter(user=dev.account).filter(issue__milestone__repository__project=project).all()
+            devs[dev.account.username]["time_spent"] = sum([time_spend.amount for time_spend in times_spent]) / 60
+        dev_list = []
+        for key, val in devs.items():
+            val["username"] = key
+            dev_list.append(val)
+        data["developers"] = dev_list
+        data["project"] = {}
+        for key in ["time_spent", "lines_added", "lines_removed"]:
+            data["project"][key] = sum([x[key] for x in dev_list])
+        data["milestones"] = get_grademilestone_data_for_project(project, grade_milestones, True)
+        return JsonResponse(data, safe=False)
 
 
 class ProfileView(views.APIView):

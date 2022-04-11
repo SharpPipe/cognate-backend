@@ -10,8 +10,8 @@ class Profile(models.Model):
 
 
 class Committer(models.Model):
-    uni_id = models.CharField(max_length=50)
-    email = models.CharField(max_length=100)
+    name = models.CharField(max_length=250)
+    email = models.CharField(max_length=250)
     account = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True)
 
 
