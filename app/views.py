@@ -1,4 +1,3 @@
-import decimal
 import string
 
 import requests
@@ -15,734 +14,25 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process, Committer, \
-    Commit, ProjectGrade
+    GradeMilestone, UserProject, UserGrade, Milestone, TimeSpent, Feedback, Process, ProjectGrade
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
-    RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
-    ProcessSerializer, FeedbackSerializer, TimeSpentSerializer
-
-
-def get_members_from_repo(repo, user, get_all):
-    base_url = "https://gitlab.cs.ttu.ee"
-    api_part = "/api/v4"
-    endpoint_part = f"/projects/{repo.gitlab_id}/members" + ("/all" if get_all else "")
-    token_part = f"?private_token={user.profile.gitlab_token}"
-    print(token_part)
-
-    answer = requests.get(base_url + api_part + endpoint_part + token_part)
-    return answer.json()
-
-
-def add_user_grade_recursive(user_project, category):
-    UserGrade.objects.create(amount=0, user_project=user_project, grade_category=category)
-    for child in category.children.all():
-        add_user_grade_recursive(user_project, child)
-
-
-def add_user_grade(user_project, project_group):
-    root_category = project_group.grade_calculation.grade_category
-    add_user_grade_recursive(user_project, root_category)
-
-
-def get_root_category(category):
-    if category.parent_category is not None:
-        return get_root_category(category.parent_category)
-    return category
-
-
-def give_grade(query, amount, grading_type, grade_type, user, grade_category):
-    added_data = False
-    for old_grade in query.all():
-        if old_grade.grade_type == "P":
-            old_grade.delete()
-        elif old_grade.grade_type == grade_type:
-            old_grade.amount = amount
-            old_grade.save()
-            added_data = True
-    if not added_data:
-        if grading_type == "user":
-            UserGrade.objects.create(amount=amount, user_project=user, grade_category=grade_category, grade_type=grading_type)
-        else:
-            ProjectGrade.objects.create(amount=amount, project=user, grade_category=grade_category, grade_type=grading_type)
-
-
-def give_manual_grade(query, amount, grade_type, user, grade_category):
-    give_grade(query, amount, grade_type, "M", user, grade_category)
-
-
-def give_automated_grade_general(amount, grade_category, user, grades_query, grade_type):
-    give_grade(grades_query, amount, grade_type, "A", user, grade_category)
-
-
-def give_automated_grade(amount, grade_category, user_project, grades_query):
-    give_automated_grade_general(amount, grade_category, user_project, grades_query, "user")
-
-
-def give_automated_project_grade(amount, grade_category, project, grades_query):
-    give_automated_grade_general(amount, grade_category, project, grades_query, "project")
-
-
-def get_grade_milestone_for_grade_category(grade_category):
-    if grade_category is None:
-        return
-    try:
-        return grade_category.grademilestone
-    except ObjectDoesNotExist:
-        return get_grade_milestone_for_grade_category(grade_category.parent_category)
-
-
-def get_child_grades(child_user_grades):
-    child_grades = []
-    for child_user_grade in child_user_grades:
-        q1 = child_user_grade.filter(grade_type="M")
-        if q1.count() == 0:
-            q2 = child_user_grade.filter(grade_type="A")
-            if q2.count() == 0:
-                child_grades.append(0)
-            else:
-                child_grades.append(q2.first().amount)
-        else:
-            child_grades.append(q1.first().amount)
-    return child_grades
-
-
-def recalculate_smi(grade_category, children, child_user_grades, user, query, grade_give_function):
-    func = GradeCategory.GRADE_TYPE_FUNCS[grade_category.grade_type]
-    total_potential = func([child.total for child in children])
-    child_grades = get_child_grades(child_user_grades)
-    total_value = func(child_grades)
-    amount = grade_category.total * total_value / total_potential
-    grade_give_function(amount, grade_category, user, query)
-
-
-def recalculate_project_grade(grade_category, project):
-    children = grade_category.children.all()
-    for child in children:
-        recalculate_project_grade(child, project)
-
-    if grade_category.grade_type in "SMI":
-        child_user_grades = [ProjectGrade.objects.filter(grade_category=child).filter(project=project) for child in children]
-        user_grade = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project).filter(grade_type="A")
-        recalculate_smi(grade_category, children, child_user_grades, project, user_grade, give_automated_project_grade)
-    elif grade_category.grade_type == "A":
-        automation = AutomateGrade.objects.filter(grade_category=grade_category)
-        if automation.count() == 0:
-            return
-        automation = automation.first()
-        user_grade = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project).filter(grade_type="A")
-
-        if automation.automation_type == "R":
-            amount = random.random() * grade_category.total  # TODO: Think about if grade has already been rolled, should we roll it again
-        elif automation.automation_type == "T":
-            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
-            time_spent = get_time_spent_for_project_in_milestone(project, grade_milestone)
-            print(f"Time spent: {time_spent}")
-            amount = decimal.Decimal(min(1, time_spent / automation.amount_needed)) * grade_category.total
-        elif automation.automation_type == "L":
-            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
-            lines_added = get_lines_added_for_project_in_milestone(project, grade_milestone)
-            print(f"Lines added: {lines_added}")
-            amount = decimal.Decimal(min(1, lines_added / automation.amount_needed)) * grade_category.total
-        give_automated_project_grade(amount, grade_category, project, user_grade)
-
-
-def recalculate_user_grade(grade_category, user_project):
-    children = grade_category.children.all()
-    for child in children:
-        if child.project_grade:
-            recalculate_project_grade(child, user_project.project)
-        else:
-            recalculate_user_grade(child, user_project)
-
-    if grade_category.grade_type in "SMI":
-        child_user_grades = []
-        for child in children:
-            if child.project_grade:
-                child_user_grades.append(ProjectGrade.objects.filter(grade_category=child).filter(project=user_project.project))
-            else:
-                child_user_grades.append(UserGrade.objects.filter(grade_category=child).filter(user_project=user_project))
-
-        user_grade = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).filter(grade_type="A")
-        recalculate_smi(grade_category, children, child_user_grades, user_project, user_grade, give_automated_grade)
-    elif grade_category.grade_type == "A":
-        automation = AutomateGrade.objects.filter(grade_category=grade_category)
-        if automation.count() == 0:
-            return
-        automation = automation.first()
-        user_grade = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).filter(grade_type="A")
-
-        if automation.automation_type == "R":
-            amount = random.random() * grade_category.total  # TODO: Think about if grade has already been rolled, should we roll it again
-        elif automation.automation_type == "T":
-            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
-            time_spent = get_time_spent_for_user_in_milestone(user_project, grade_milestone)
-            print(f"Time spent: {time_spent}")
-            amount = decimal.Decimal(min(1, time_spent / automation.amount_needed)) * grade_category.total
-        elif automation.automation_type == "L":
-            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
-            lines_added = get_lines_added_for_user_in_milestone(user_project, grade_milestone)
-            print(f"Lines added: {lines_added}")
-            amount = decimal.Decimal(min(1, lines_added / automation.amount_needed)) * grade_category.total
-        give_automated_grade(amount, grade_category, user_project, user_grade)
-
-
-def recalculate_grade_category(grade_category):
-    if grade_category.project_grade:
-        for project in set([project_grade.project for project_grade in ProjectGrade.objects.filter(grade_category=grade_category).all()]):
-            recalculate_project_grade(grade_category, project)
-    else:
-        for user_project in set([user_grade.user_project for user_grade in UserGrade.objects.filter(grade_category=grade_category).all()]):
-            recalculate_user_grade(grade_category, user_project)
-
-
-def create_user(username, user_objects):
-    users = User.objects.filter(username=username)
-    if users.count() > 0:
-        user_objects.append(users.first())
-        return
-    email = username + "@ttu.ee"
-    sub_data = {}
-    sub_data["username"] = username
-    sub_data["email"] = email
-    sub_data["password"] = "".join([random.choice(string.ascii_lowercase) for _ in range(20)])
-    sub_data["password_confirm"] = sub_data["password"]
-    if "." in username:
-        sub_data["first_name"] = username.split(".")[0]
-        sub_data["last_name"] = ".".join(username.split(".")[1:])
-    else:
-        sub_data["first_name"] = username[:len(username) // 2]
-        sub_data["last_name"] = username[len(username) // 2:]
-    serializer = RegisterSerializer(data=sub_data)
-    serializer.is_valid()
-    user_object = serializer.save()
-    Profile.objects.create(user=user_object, actual_account=False)
-    user_objects.append(user_object)
-
-
-def pick_grade(query):
-    options = query.all()
-    order = ["M", "A", "P"]
-    for target_type in order:
-        for option in options:
-            if option.grade_type == target_type:
-                return option
-
-
-def propagate_grade_up(user, grade_category):
-    parent = grade_category.parent_category
-    if parent is None:
-        return
-    if parent.grade_type not in "SMI":
-        return
-
-    if parent.project_grade:
-        if grade_category.project_grade:
-            propagate_project_grade_update_up(user, parent)
-        else:
-            # TODO: Maybe allow this some day
-            pass
-    else:
-        if grade_category.project_grade:
-            for dev in UserProject.objects.filter(project=user).filter(disabled=False).all():
-                propagate_user_grade_update_up(dev, user, parent)
-        else:
-            propagate_user_grade_update_up(user, None, parent)
-
-
-def propagate_user_grade_update_up(user_project, project, parent):
-    func = GradeCategory.GRADE_TYPE_FUNCS[parent.grade_type]
-    children = parent.children
-    children_total_potential = func([c.total for c in children.all()])
-    children_values = []
-    for child in children.all():
-        if child.project_grade:
-            children_values.append(pick_grade(ProjectGrade.objects.filter(project=project).filter(grade_category=child)).amount)
-        else:
-            children_values.append(pick_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=child)).amount)
-    children_total_value = func(children_values)
-
-    amount = parent.total * children_total_value / children_total_potential
-    grade_query = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent)
-    give_automated_grade(amount, parent, user_project, grade_query)
-    if grade_query.filter(grade_type="M").count() > 0:
-        return
-    propagate_grade_up(user_project, parent)
-
-
-def propagate_project_grade_update_up(project, parent):
-    func = GradeCategory.GRADE_TYPE_FUNCS[parent.grade_type]
-    children = parent.children
-    children_total_potential = func([c.total for c in children.all()])
-    children_values = []
-    for child in children.all():
-        children_values.append(pick_grade(ProjectGrade.objects.filter(project=project).filter(grade_category=child)).amount)
-    children_total_value = func(children_values)
-
-    amount = parent.total * children_total_value / children_total_potential
-    grade_query = ProjectGrade.objects.filter(project=project).filter(grade_category=parent)
-    give_automated_project_grade(amount, parent, project, grade_query)
-    if grade_query.filter(grade_type="M").count() > 0:
-        return
-    propagate_grade_up(project, parent)
-
-
-def grade_user(user_id, grade_category, amount):
-    user_project = UserProject.objects.filter(pk=user_id).first()
-    search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade_category)
-    give_manual_grade(search, amount, "user", user_project, grade_category)
-    propagate_grade_up(user_project, grade_category)
-
-
-def grade_project(project_id, grade_category, amount):
-    project = Project.objects.filter(pk=project_id).first()
-    search = ProjectGrade.objects.filter(project=project).filter(grade_category=grade_category)
-    give_manual_grade(search, amount, "project", project, grade_category)
-    propagate_grade_up(project, grade_category)
-
-
-def grade(target_id, grade_id, amount):
-    grade_category = GradeCategory.objects.filter(pk=grade_id).first()
-    if grade_category.project_grade:
-        grade_project(target_id, grade_category, amount)
-    else:
-        grade_user(target_id, grade_category, amount)
-
-
-available_times = {
-    "m": 1,
-    "h": 60,
-    "d": 480,
-    "w": 2400
-}
-
-
-def minute_amount(message):
-    at_numbers = True
-    number_part = ''
-    letter_part = ''
-    for letter in message:
-        if letter.isdigit():
-            if not at_numbers:
-                return False
-            number_part += letter
-        else:
-            at_numbers = False
-            letter_part += letter
-    if len(number_part) == 0 or len(number_part) == 0:
-        return False
-    number = int(number_part)
-    if letter_part not in available_times.keys():
-        return False
-    return number * available_times[letter_part]
-
-
-def is_time_spent_message(message):
-    if "added " not in message:
-        return False, 0
-    message = message.split("added ")[1]
-    if " of time spent" not in message:
-        return False, 0
-    message = message.split(" of time spent")[0]
-    parts = [minute_amount(x) for x in message.split(" ")]
-    if False in parts:
-        return False, 0
-    return True, sum(parts)
-
-
-def update_repository(id, user, new_users):
-    repo = Repository.objects.filter(pk=id).first()
-    project = repo.project
-    grade_category_root = project.project_group.grade_calculation.grade_category
-    base_url = "https://gitlab.cs.ttu.ee"
-    api_part = "/api/v4"
-    token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
-
-    # Refresh users
-    answer_json = get_members_from_repo(repo, user, False)
-    # print(answer_json)
-    user_objects = []
-    for member in answer_json:
-        # print(member)
-        if member["access_level"] >= 30:
-            create_user(member['username'], user_objects)
-        # print(f"{member['username']}")
-        # print()
-    for user_object in user_objects:
-        if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
-            user_project = UserProject.objects.create(rights="M", account=user_object, project=project, colour=random_colour())
-            add_user_grade_recursive(user_project, grade_category_root)
-
-    # Load all milestones
-    endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
-    answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
-    # print(answer)
-    for milestone in answer:
-        # print(milestone)
-        gitlab_id = milestone["id"]
-        matching = repo.milestones.filter(gitlab_id=gitlab_id)
-        if matching.count() == 0:
-            Milestone.objects.create(repository=repo, title=milestone["title"], gitlab_id=milestone["id"], gitlab_link=milestone["web_url"])
-            # print(f"Created milestone {milestone['title']}")
-        elif matching.count() == 1:
-            milestone_object = matching.first()
-            # TODO: Maybe record the changes somehow?
-            milestone_object.title = milestone["title"]
-            milestone_object.gitlab_link = milestone["web_url"]
-            milestone_object.save()
-
-    # Load all issues
-    issues = []
-    endpoint_part = f"/projects/{repo.gitlab_id}/issues"
-    counter = 1
-    issues_to_refresh = []
-    while True:
-        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
-        issues += answer
-        if len(answer) < 100:
-            break
-        counter += 1
-    for issue in issues:
-        gitlab_id = issue['id']
-        gitlab_iid = issue['iid']
-        title = issue['title']
-        milestone = issue['milestone']
-        url = issue["web_url"]
-        issues_to_refresh.append((gitlab_iid, gitlab_id))
-        issue_query = Issue.objects.filter(gitlab_id=gitlab_id)
-        if issue_query.count() == 0:
-            if milestone is not None:
-                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, gitlab_link=url, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
-            else:
-                issue_object = Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, gitlab_link=url)
-        else:
-            issue_object = issue_query.first()
-            to_save = False
-            if issue_object.gitlab_link is None:
-                issue_object.gitlab_link = url
-                to_save = True
-            if milestone is not None:
-                milestone_object = Milestone.objects.filter(gitlab_id=milestone['id']).first()
-                if issue_object.milestone != milestone_object:
-                    if issue_object.milestone is None:
-                        issue_object.has_been_moved = True
-                    issue_object.milestone = milestone_object
-                    to_save = True
-            if to_save:
-                issue_object.save()
-
-    # Load all time spent
-    time_spents = []
-
-    for issue, id in issues_to_refresh:
-        endpoint_part = f"/projects/{repo.gitlab_id}/issues/{issue}/notes"
-        counter = 1
-        while True:
-            url = base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)
-            answer = requests.get(url).json()
-            time_spents += [(id, x) for x in answer]
-            if len(answer) < 100:
-                break
-            counter += 1
-    for id, note in time_spents:
-        body = note['body']
-        author = note['author']['username']
-        is_time_spent, amount = is_time_spent_message(body)
-        gitlab_id = note['id']
-        if is_time_spent:
-            user = User.objects.filter(username=author)
-            if user.count() == 0:
-                print(f"Error, unknown user {author} logged time, repo id {repo.gitlab_id}")
-                if author not in new_users:
-                    new_users.append(author)
-                continue
-            if TimeSpent.objects.filter(gitlab_id=gitlab_id).count() == 0:
-                user = user.first()
-                created_at = note['created_at']
-                issue = Issue.objects.filter(gitlab_id=id).first()
-                time_spent = TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
-        else:
-            pass
-            # print(f"Unknown message with content {body}")
-
-    # Load all commits
-    # TODO: Load commit data
-    print("Should load commits")
-    endpoint_part = f"/projects/{repo.gitlab_id}/repository/commits"
-    counter = 1
-    commits = []
-    while True:
-        answer = requests.get(base_url + api_part + endpoint_part + token_part + "&with_stats=true&page=" + str(counter)).json()
-        commits += answer
-        if len(answer) < 100:
-            break
-        counter += 1
-    for commit in commits:
-        commit_hash = commit["id"]
-        if Commit.objects.filter(hash=commit_hash).count() > 0:
-            continue
-        commit_time = commit["created_at"]
-        message = commit["message"]
-        lines_added = commit["stats"]["additions"]
-        lines_removed = commit["stats"]["deletions"]
-        name = commit["committer_name"]
-        email = commit["committer_email"]
-        committers = Committer.objects.filter(name=name).filter(email=email)
-        if committers.count() > 0:
-            committer = committers.first()
-        else:
-            committer = Committer.objects.create(name=name, email=email)
-            users = User.objects.filter(username=name)
-            if users.count() > 0:
-                committer.account = users.first()
-                committer.save()
-            if "@" in email:
-                users = User.objects.filter(username=email.split("@")[0])
-                if users.count() > 0:
-                    committer.account = users.first()
-                    committer.save()
-        Commit.objects.create(hash=commit_hash, time=commit_time, message=message, lines_added=lines_added, lines_removed=lines_removed, author=committer, repository=repo)
-        print(commit)
-    return repo
-
-
-def get_grade_milestones_by_projectgroup(project_group):
-    grademilestones = []
-    for test_milestone in GradeMilestone.objects.all():
-        root_category = test_milestone.grade_category
-        while root_category.parent_category is not None:
-            root_category = root_category.parent_category
-        query = GradeCalculation.objects.filter(grade_category=root_category)
-        if query.count() == 0:
-            continue
-        if project_group == query.first().project_group:
-            grademilestones.append(test_milestone)
-    return grademilestones
-
-
-def get_amount_of_grademilestone_by_projectgroup(project_group):
-    return len(get_grade_milestones_by_projectgroup(project_group))
-
-
-def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group, milestone_id):
-    for test_milestone in GradeMilestone.objects.all():
-        if test_milestone.milestone_order_id != milestone_id:
-            continue
-        root_category = test_milestone.grade_category
-        while root_category.parent_category is not None:
-            root_category = root_category.parent_category
-        query = GradeCalculation.objects.filter(grade_category=root_category)
-        if query.count() == 0:
-            continue
-        if project_group == query.first().project_group:
-            return test_milestone
-
-
-def get_time_spent_for_project_in_milestone(project, grade_milestone):
-    return sum([get_time_spent_for_user_in_milestone(user_project, grade_milestone) for user_project in UserProject.objects.filter(project=project).filter(disabled=False).all()])
-
-
-def get_time_spent_for_user_in_milestone(user_project, grade_milestone):
-    times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=grade_milestone).all()
-    return sum([time_spend.amount for time_spend in times_spent if grade_milestone.start <= time_spend.time <= grade_milestone.end]) / 60
-
-
-def get_lines_added_for_project_in_milestone(project, grade_milestone):
-    return sum([get_lines_added_for_user_in_milestone(user_project, grade_milestone) for user_project in UserProject.objects.filter(project=project).filter(disabled=False).all()])
-
-
-def get_lines_added_for_user_in_milestone(user_project, grade_milestone):
-    project = user_project.project
-    repos = Repository.objects.filter(project=project).all()
-    commits = []
-    for repo in repos:
-        commits += [commit for commit in Commit.objects.filter(repository=repo).all() if grade_milestone.start <= commit.time <= grade_milestone.end]
-    return sum([commit.lines_added for commit in commits])
-
-
-def get_milestone_data_for_project(request, id, milestone_id):
-    project = Project.objects.filter(pk=id).first()
-    milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
-    if milestone is None:
-        return {"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."}
-
-    promised_json = []
-
-    user_projects = UserProject.objects.filter(project=project).filter(disabled=False).all()
-    for user_project in user_projects:
-        user_list = []
-        total_time = get_time_spent_for_user_in_milestone(user_project, milestone)
-        promised_json.append({
-            "username": user_project.account.username,
-            "colour": user_project.colour,
-            "id": user_project.pk,
-            "spent_time": total_time,
-            "data": user_list
-        })
-        for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).filter(project_grade=False).all():
-            category_data = {}
-            user_list.append(category_data)
-
-            category_data["name"] = grade_category.name
-            category_data["total"] = grade_category.total
-            category_data["automatic_points"] = None
-            category_data["given_points"] = None
-            category_data["id"] = grade_category.pk
-
-            recalculate_user_grade(grade_category, user_project)
-            user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
-
-            for user_grade in user_grades.all():
-                if user_grade.grade_type == "A":
-                    category_data["automatic_points"] = user_grade.amount
-                elif user_grade.grade_type == "M":
-                    category_data["given_points"] = user_grade.amount
-
-    project_grades = []
-    for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).filter(project_grade=True).all():
-        category_data = {}
-        project_grades.append(category_data)
-        category_data["name"] = grade_category.name
-        category_data["total"] = grade_category.total
-        category_data["automatic_points"] = None
-        category_data["given_points"] = None
-        category_data["id"] = grade_category.pk
-
-        recalculate_project_grade(grade_category, project)
-        grades = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project)
-        for grade in grades.all():
-            if grade.grade_type == "A":
-                category_data["automatic_points"] = grade.amount
-            elif grade.grade_type == "M":
-                category_data["given_points"] = grade.amount
-    return {"status": 200, "project_name": project.name, "users_data": promised_json, "project_data": project_grades}
-
-
-anonymous_json = {"Error": "Not logged in."}
-no_access_json = {"Error": "You don't have access"}
-
-
-def user_has_access_to_project_group_with_security_level(user, project_group, roles):
-    user_project_groups = UserProjectGroup.objects.filter(project_group=project_group).filter(account=user)
-    for user_group in user_project_groups.all():
-        if user_group.rights in roles:
-            return True
-    return False
-
-
-def user_has_access_to_project_with_security_level(user, project, roles):
-    user_projects = UserProject.objects.filter(project=project).filter(account=user)
-    for user_project in user_projects.all():
-        if user_project.rights in roles:
-            return True
-    return user_has_access_to_project_group_with_security_level(user, project.project_group, roles)
-
-
-def user_has_access_to_project(user, project):
-    user_projects = UserProject.objects.filter(project=project).filter(account=user)
-    if user_projects.count() > 0:
-        return True
-    project_group = project.project_group
-    return user_has_access_to_project_group_with_security_level(user, project_group, ["A", "O"])
-
-
-def project_group_of_grade_category_id(grade_id):
-    root_category = get_root_category(GradeCategory.objects.filter(id=grade_id).first())
-    return root_category.grade_calculation.project_group
-
-
-def update_all_repos_in_group(project_group, user, process):
-    print(f"Starting process with hash {process.hash}")
-    repos = []
-    new_users = []
-    for project in project_group.project_set.all():
-        for repository in project.repository_set.all():
-            repos.append(repository.pk)
-    for i, repo in enumerate(repos):
-        update_repository(repo, user, new_users)
-        process.completion_percentage = 100 * i / len(repos)
-        process.save()
-        print(f"{100 * i / len(repos)}% done refreshing repos")
-    process.completion_percentage = 100
-    process.status = "F"
-    process.data = ProjectGroupSerializer(project_group).data
-    process.save()
-    print(f"Added users {new_users}")
-    print(f"Finished process with hash {process.hash}")
-
-
-def serialize_time_spent(times_spent):
-    return_json = []
-    for time_spent in times_spent:
-        dat = TimeSpentSerializer(time_spent).data
-        dat["title"] = dat["issue"]["title"]
-        dat["gitlab_link"] = dat["issue"]["gitlab_link"]
-        del dat["issue"]
-        dat["repo_id"] = time_spent.issue.milestone.repository.pk if time_spent.issue.milestone is not None else -1
-        return_json.append(dat)
-    return return_json
-
-
-def get_grademilestone_data_for_project(project, grade_milestones, detailed=False):
-    milestones = []
-    for grade_milestone in grade_milestones:
-        this_milestone = {}
-        milestones.append(this_milestone)
-        this_milestone["milestone_id"] = grade_milestone.milestone_order_id
-        milestone_category = grade_milestone.grade_category
-        milestone_users = []
-        this_milestone["user_points"] = milestone_users
-        graded = False
-        for dev in project.userproject_set.filter(disabled=False).all():
-            user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
-            # TODO: think of a better way to determine this
-            if user_grade.amount > 0:
-                graded = True
-            dev_data = {
-                "name": dev.account.username,
-                "colour": dev.colour,
-                "points": user_grade.amount,
-                "time_spent": get_time_spent_for_user_in_milestone(dev, grade_milestone)
-            }
-            if detailed:
-                grades = {}
-                for sub_grade in UserGrade.objects.filter(grade_category__parent_category=milestone_category).filter(user_project=dev).filter(grade_type="M").all():
-                    grades[sub_grade.grade_category.name] = sub_grade.amount
-                dev_data["grades"] = grades
-            milestone_users.append(dev_data)
-        milestone_links = []
-        for milestone in grade_milestone.milestone_set.filter(repository__project=project).all():
-            milestone_links.append(milestone.gitlab_link)
-        this_milestone["gitlab_links"] = milestone_links
-        feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(
-            grade_milestone=grade_milestone).all()
-        this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
-
-        if detailed:
-            this_milestone["graded"] = graded
-            this_milestone["start_time"] = grade_milestone.start
-            this_milestone["end_time"] = grade_milestone.end
-
-    milestones.sort(key=lambda x: x["milestone_id"])
-    return milestones
-
-
-def random_colour(with_alpha=False):
-    # Generate random HSV colour, ranges given by Mary
-    h = random.random()
-    s = 0.6 + random.random() * 0.15
-    v = 0.7 + random.random() * 0.1
-    rgb = colorsys.hsv_to_rgb(h, s, v)
-    hex_value = '%02x%02x%02x' % (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
-    if with_alpha:
-        hex_value += "".join([random.choice("0123456789abcdef") for _ in range(2)])
-    return hex_value
+    GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, ProcessSerializer, \
+    FeedbackSerializer
+
+from . import grading_tree
+from . import model_traversal
+from . import gitlab_helper
+from . import helpers
+from . import milestone_logic
+from . import constants
+from . import custom_serializers
 
 
 class ProjectGroupView(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         queryset = ProjectGroup.objects.filter(user_project_groups__account=request.user)
         serializer = ProjectGroupSerializer(queryset, many=True)
         data = serializer.data
@@ -752,25 +42,24 @@ class ProjectGroupView(views.APIView):
 
     def post(self, request):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         serializer = ProjectGroupSerializer(data=request.data)
         if serializer.is_valid():
             project_group = serializer.save()
             UserProjectGroup.objects.create(rights="O", account=request.user, project_group=project_group)
             grade_category = GradeCategory.objects.create(name="root", grade_type="S")
-            grade_calculation = GradeCalculation.objects.create(grade_category=grade_category, project_group=project_group)
+            GradeCalculation.objects.create(grade_category=grade_category, project_group=project_group)
         return JsonResponse({})
 
 
 class ProjectGroupLoadProjectsView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
-        # x8xkGpUazyPda_ecaGtG
+            return JsonResponse(constants.anonymous_json)
         print(f"Getting projects for project group {id}")
         group = ProjectGroup.objects.filter(pk=id).first()
-        if not user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
 
         print(f"Project group is {group} with gitlab group id {group.group_id}")
         profile = Profile.objects.filter(user=request.user).first()
@@ -803,13 +92,13 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 continue
             project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
-            members = [member["username"] for member in get_members_from_repo(repo, request.user, True)]
+            members = [member["username"] for member in gitlab_helper.get_members_from_repo(repo, request.user, True)]
             for user in User.objects.filter(username__in=members).all():
                 rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
                     continue
-                user_project = UserProject.objects.create(rights="M", account=user, project=project_object, colour=random_colour())
-                add_user_grade(user_project, group)
+                user_project = UserProject.objects.create(rights="M", account=user, project=project_object, colour=helpers.random_colour())
+                grading_tree.add_user_grade(user_project, group)
 
         return JsonResponse({"data": data})
 
@@ -817,17 +106,15 @@ class ProjectGroupLoadProjectsView(views.APIView):
 class ProjectsView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         group = ProjectGroup.objects.filter(pk=id).first()
-        if not user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
+            return JsonResponse(constants.no_access_json)
         projects = Project.objects.filter(project_group=group).all()
-        print(len(projects))
         root_category = group.grade_calculation.grade_category
-        total = root_category.total
         data = []
         base_grade_filter = UserGrade.objects.filter(grade_category=root_category)
-        grade_milestones = [x for x in get_grade_milestones_by_projectgroup(group)]
+        grade_milestones = [x for x in model_traversal.get_grade_milestones_by_projectgroup(group)]
         for project in projects:
             dat = ProjectSerializer(project).data
 
@@ -835,7 +122,6 @@ class ProjectsView(views.APIView):
             dat["mentors"] = [x.account.username for x in project.userproject_set.filter(rights="E").all()]
 
             devs = []
-            [print(dev) for dev in project.userproject_set.filter(disabled=False).all()]
             for dev in project.userproject_set.filter(disabled=False).all():
                 dev_data = {}
                 grade_object = base_grade_filter.filter(user_project=dev).first()
@@ -844,23 +130,22 @@ class ProjectsView(views.APIView):
                 dev_data["colour"] = dev.colour
                 devs.append(dev_data)
 
-            milestones = get_grademilestone_data_for_project(project, grade_milestones)
+            milestones = milestone_logic.get_grademilestone_data_for_project(project, grade_milestones)
 
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
-        # serializer = ProjectSerializer(projects, many=True)
         return JsonResponse(data, safe=False)
 
 
 class RepositoryView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not user_has_access_to_project(request.user, project):
-            return JsonResponse(no_access_json)
-        grade_milestones = [x for x in get_grade_milestones_by_projectgroup(project.project_group)]
+        if not model_traversal.user_has_access_to_project(request.user, project):
+            return JsonResponse(constants.no_access_json)
+        grade_milestones = [x for x in model_traversal.get_grade_milestones_by_projectgroup(project.project_group)]
         repos = Repository.objects.filter(project=project)
         data = {}
         data["repositories"] = RepositorySerializer(repos, many=True).data
@@ -890,14 +175,14 @@ class RepositoryView(views.APIView):
         data["project"] = {}
         for key in ["time_spent", "lines_added", "lines_removed"]:
             data["project"][key] = sum([x[key] for x in dev_list])
-        data["milestones"] = get_grademilestone_data_for_project(project, grade_milestones, True)
+        data["milestones"] = milestone_logic.get_grademilestone_data_for_project(project, grade_milestones, True)
         return JsonResponse(data, safe=False)
 
 
 class ProfileView(views.APIView):
     def put(self, request):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
         profile.gitlab_token = request.data["gitlab_token"]
         profile.save()
@@ -907,7 +192,7 @@ class ProfileView(views.APIView):
 class GradeCategoryView(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         serializer = GradeCategorySerializer(data=request.data)
         parent = GradeCategory.objects.filter(pk=id).first()
 
@@ -926,10 +211,10 @@ class GradeCategoryView(views.APIView):
             grade_category.save()
             for project in project_group.project_set.all():
                 for user_project in project.userproject_set.all():
-                    add_user_grade_recursive(user_project, grade_category)
+                    grading_tree.add_user_grade_recursive(user_project, grade_category)
             if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
-                amount = get_amount_of_grademilestone_by_projectgroup(project_group)
-                grade_milestone = GradeMilestone.objects.create(
+                amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
+                GradeMilestone.objects.create(
                     start=request.data["start"],
                     end=request.data["end"],
                     grade_category=grade_category,
@@ -940,7 +225,7 @@ class GradeCategoryView(views.APIView):
 
     def delete(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         grade_category = GradeCategory.objects.filter(pk=id).first()
         root = grade_category
         while root.parent_category is not None:
@@ -957,7 +242,7 @@ class GradeCategoryView(views.APIView):
                 grade_category.delete()
                 return JsonResponse({200: "OK"})
             else:
-                all_milestones = get_grade_milestones_by_projectgroup(project_group)
+                all_milestones = model_traversal.get_grade_milestones_by_projectgroup(project_group)
                 for milestone in all_milestones:
                     if milestone.milestone_order_id > target_milestone.milestone_order_id:
                         milestone.milestone_order_id = milestone.milestone_order_id - 1
@@ -971,10 +256,10 @@ class GradeCategoryView(views.APIView):
 class ProjectGroupGradingView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
-        if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O", "V"]):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O", "V"]):
+            return JsonResponse(constants.no_access_json)
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         if user_project_groups.count() == 0:
             return JsonResponse({4: 18})
@@ -986,7 +271,7 @@ class ProjectGroupGradingView(views.APIView):
 class ProjectGradesView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project.project_group)
         if user_project_groups.count() == 0:
@@ -1003,33 +288,30 @@ class ProjectGradesView(views.APIView):
 class RootAddUsers(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         if not request.user.is_superuser:
-            return JsonResponse(no_access_json)
+            return JsonResponse(constants.no_access_json)
 
         users = request.data["data"]
         user_objects = []
         for user in users:
-            create_user(user, user_objects)
+            gitlab_helper.create_user(user, user_objects)
 
         project_group = ProjectGroup.objects.filter(pk=id).first()
-        print(project_group)
         projects = Project.objects.filter(project_group=project_group)
-        print(projects)
         grade_category_root = project_group.grade_calculation.grade_category
         for project in projects:
             users_found = []
             for repo in project.repository_set.all():
-                answer_json = get_members_from_repo(repo, request.user, False)
-                print(answer_json)
+                answer_json = gitlab_helper.get_members_from_repo(repo, request.user, False)
                 for member in answer_json:
                     for user in user_objects:
                         if user.username in users_found:
                             continue
                         if member["username"] == user.username:
                             if UserProject.objects.filter(account=user).filter(project=project).count() == 0:
-                                user_project = UserProject.objects.create(rights="M", account=user, project=project, colour=random_colour())
-                                add_user_grade_recursive(user_project, grade_category_root)
+                                user_project = UserProject.objects.create(rights="M", account=user, project=project, colour=helpers.random_colour())
+                                grading_tree.add_user_grade_recursive(user_project, grade_category_root)
                                 users_found.append(user.username)
                                 print(f"{member['username']} found in project {project.name}")
         return JsonResponse({200: "OK"})
@@ -1038,9 +320,9 @@ class RootAddUsers(views.APIView):
 class MockAccounts(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         if not request.user.is_superuser:
-            return JsonResponse(no_access_json)
+            return JsonResponse(constants.no_access_json)
         accounts = User.objects.filter(profile__actual_account=False)
         return JsonResponse([x.id for x in accounts], safe=False)
 
@@ -1048,32 +330,32 @@ class MockAccounts(views.APIView):
 class GradeUserView(views.APIView):
     def post(self, request, user_id, grade_id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
-        project_group = project_group_of_grade_category_id(grade_id)
-        if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
-            return JsonResponse(no_access_json)
+            return JsonResponse(constants.anonymous_json)
+        project_group = model_traversal.project_group_of_grade_category_id(grade_id)
+        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
-        grade(user_id, grade_id, request.data["amount"])
+        grading_tree.grade(user_id, grade_id, request.data["amount"])
         return JsonResponse({200: "OK"})
 
 
 class RepositoryUpdateView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
-        if not user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):
-            return JsonResponse(no_access_json)
-        repo = update_repository(id, request.user, [])
+            return JsonResponse(constants.anonymous_json)
+        if not model_traversal.user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):
+            return JsonResponse(constants.no_access_json)
+        repo = gitlab_helper.update_repository(id, request.user, [])
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
 
 
 class ProjectGroupUpdateView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
-        if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
         name = "project group update"
         hid = hashlib.sha256()
         [hid.update(str(x).encode()) for x in [name, id]]
@@ -1089,7 +371,7 @@ class ProjectGroupUpdateView(views.APIView):
         [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
         process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SG", status="O", completion_percentage=0)
         process.save()
-        t = threading.Thread(target=update_all_repos_in_group, args=[project_group, request.user, process], daemon=True)
+        t = threading.Thread(target=gitlab_helper.update_all_repos_in_group, args=[project_group, request.user, process], daemon=True)
         t.start()
         return JsonResponse({
             "id": process.pk,
@@ -1100,16 +382,15 @@ class ProjectGroupUpdateView(views.APIView):
 class ProjectMilestonesView(views.APIView):
     def get(self, request, id):
         # TODO: repurpose this endpoint
-        print(request.user)
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
-        if not user_has_access_to_project(request.user, Project.objects.filter(id=id).first()):
-            return JsonResponse(no_access_json)
+            return JsonResponse(constants.anonymous_json)
+        if not model_traversal.user_has_access_to_project(request.user, Project.objects.filter(id=id).first()):
+            return JsonResponse(constants.no_access_json)
         data = []
         i = 1
         name = ""
         while True:
-            res = get_milestone_data_for_project(request, id, i)
+            res = milestone_logic.get_milestone_data_for_project(request, id, i)
             if res["status"] == 418:
                 break
             name = res["project_name"]
@@ -1121,13 +402,13 @@ class ProjectMilestonesView(views.APIView):
 class GroupSummaryMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         data = []
         project_group = ProjectGroup.objects.filter(pk=id).first()
-        if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
         for project in project_group.project_set.all():
-            project_res = get_milestone_data_for_project(request, project.pk, milestone_id)
+            project_res = milestone_logic.get_milestone_data_for_project(request, project.pk, milestone_id)
             if project_res["status"] == 418:
                 return JsonResponse(project_res)
             del project_res["status"]
@@ -1138,10 +419,10 @@ class GroupSummaryMilestoneDataView(views.APIView):
 class ProjectMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
-        if not user_has_access_to_project(request.user, Project.objects.filter(pk=id).first()):
-            return JsonResponse(no_access_json)
-        res = get_milestone_data_for_project(request, id, milestone_id)
+            return JsonResponse(constants.anonymous_json)
+        if not model_traversal.user_has_access_to_project(request.user, Project.objects.filter(pk=id).first()):
+            return JsonResponse(constants.no_access_json)
+        res = milestone_logic.get_milestone_data_for_project(request, id, milestone_id)
         if res["status"] == 418:
             return JsonResponse(res)
         del res["status"]
@@ -1151,11 +432,11 @@ class ProjectMilestoneDataView(views.APIView):
 class ProjectMilestoneTimeSpentView(views.APIView):
     def get(self, request, id, milestone_id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not user_has_access_to_project(request.user, project):
-            return JsonResponse(no_access_json)
-        milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
+        if not model_traversal.user_has_access_to_project(request.user, project):
+            return JsonResponse(constants.no_access_json)
+        milestone = model_traversal.get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
         if milestone is None:
             return JsonResponse({"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."})
 
@@ -1164,16 +445,16 @@ class ProjectMilestoneTimeSpentView(views.APIView):
         user_projects = UserProject.objects.filter(project=project).all()
         for user_project in user_projects:
             promised_json += TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
-        return JsonResponse(serialize_time_spent(promised_json), safe=False)
+        return JsonResponse(custom_serializers.serialize_time_spent(promised_json), safe=False)
 
 
 class ParametricTimeSpentView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not user_has_access_to_project(request.user, project):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project(request.user, project):
+            return JsonResponse(constants.no_access_json)
         user_projects = UserProject.objects.filter(project=project).all()
         dat = request.GET
         promised_json = []
@@ -1186,23 +467,22 @@ class ParametricTimeSpentView(views.APIView):
             elif "end" in dat.keys():
                 base_filter = base_filter.filter(time__lte=dat["end"])
             promised_json += base_filter.all()
-        return JsonResponse(serialize_time_spent(promised_json), safe=False)
+        return JsonResponse(custom_serializers.serialize_time_spent(promised_json), safe=False)
 
 
 class BulkGradeView(views.APIView):
     def post(self, request):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
-        print(request.data)
+            return JsonResponse(constants.anonymous_json)
         checked = False
 
         for sub_grade in request.data:
             if not checked:
-                project_group = project_group_of_grade_category_id(sub_grade["grade_id"])
-                if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
-                    return JsonResponse(no_access_json)
+                project_group = model_traversal.project_group_of_grade_category_id(sub_grade["grade_id"])
+                if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+                    return JsonResponse(constants.no_access_json)
                 checked = True
-            grade(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
+            grading_tree.grade(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
         return JsonResponse({200: "OK"})
 
 
@@ -1255,7 +535,7 @@ class FeedbackView(views.APIView):
                 feedback.project = Project.objects.filter(pk=dat[req]).first()
             elif req == "gradeMilestone":
                 project = Project.objects.filter(pk=dat["project"]).first() if "project" in dat.keys() else UserProject.objects.filter(pk=dat["userProject"]).first().project
-                feedback.grade_milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, dat[req])
+                feedback.grade_milestone = model_traversal.get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, dat[req])
             elif req == "userProject":
                 feedback.user = GradeMilestone.objects.filter(pk=dat[req]).first()
         feedback.save()
@@ -1265,13 +545,13 @@ class FeedbackView(views.APIView):
 class ProjectMilestoneConnectionsView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not user_has_access_to_project(request.user, project):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project(request.user, project):
+            return JsonResponse(constants.no_access_json)
 
         # Grade milestones
-        grade_milestones = get_grade_milestones_by_projectgroup(project.project_group)
+        grade_milestones = model_traversal.get_grade_milestones_by_projectgroup(project.project_group)
         gm_serializer = GradeMilestoneSerializer(grade_milestones, many=True)
 
         # Repository milestones
@@ -1290,10 +570,10 @@ class ProjectMilestoneConnectionsView(views.APIView):
 class MilestoneSetGradeMilestoneView(views.APIView):
     def put(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         repo_milestone = Milestone.objects.filter(pk=id).first()
-        if not user_has_access_to_project(request.user, repo_milestone.repository.project):
-            return JsonResponse(no_access_json)
+        if not model_traversal.user_has_access_to_project(request.user, repo_milestone.repository.project):
+            return JsonResponse(constants.no_access_json)
         if request.data["id"] != -1:
             grade_milestone = GradeMilestone.objects.filter(pk=request.data["id"]).first()
         else:
@@ -1301,7 +581,7 @@ class MilestoneSetGradeMilestoneView(views.APIView):
         # TODO: Check that connection is allowed
         if grade_milestone is not None:
             repo_milestone_project_group = repo_milestone.repository.project.project_group
-            root_category = get_root_category(grade_milestone.grade_category)
+            root_category = model_traversal.get_root_category(grade_milestone.grade_category)
             grade_milestone_project_group = GradeCalculation.objects.filter(grade_category=root_category).first().project_group
             if repo_milestone_project_group != grade_milestone_project_group:
                 print(f"Repository milestone {repo_milestone} and grade milestone {grade_milestone} do not have matching project groups.")
@@ -1344,29 +624,29 @@ class ProjectAddUserView(views.APIView):
             return JsonResponse({}, status=401)
         user = User.objects.filter(pk=request.data["user"]).first()
         disabled = request.data["rights"] != "M"
-        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled, colour=random_colour())
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled, colour=helpers.random_colour())
         return JsonResponse({})
 
 
 class GradeCategoryRecalculateView(views.APIView):
     def get(self, request, id):
         grade_category = GradeCategory.objects.filter(pk=id).first()
-        project_group = get_root_category(grade_category).grade_calculation.project_group
-        if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+        project_group = model_traversal.get_root_category(grade_category).grade_calculation.project_group
+        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse({}, status=401)
-        recalculate_grade_category(grade_category)
+        grading_tree.recalculate_grade_category(grade_category)
         return JsonResponse({})
 
 
 class ChangeDevColourView(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
-            return JsonResponse(anonymous_json)
+            return JsonResponse(constants.anonymous_json)
         user_project = UserProject.objects.filter(project=id).filter(account__username=request.data["username"])
         if user_project.count() == 0:
             return JsonResponse({}, 404)
         user_project = user_project.first()
-        if not (user_has_access_to_project_with_security_level(request.user, user_project.project, ["O", "A", "T", "E"]) or user_project.account == request.user):
+        if not (model_traversal.user_has_access_to_project_with_security_level(request.user, user_project.project, ["O", "A", "T", "E"]) or user_project.account == request.user):
             return JsonResponse({}, 404)
         user_project.colour = request.data["colour"]
         user_project.save()
