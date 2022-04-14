@@ -666,3 +666,21 @@ class ProjectRepoConnectionView(views.APIView):
         for project in projects:
             repos += Repository.objects.filter(project=project).all()
         return JsonResponse({"projects": ProjectSerializer(projects, many=True).data, "repos": RepositorySerializer(repos, many=True).data})
+
+
+class RepoSetProjectView(views.APIView):
+    def put(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        repo = Repository.objects.filter(pk=id).first()
+        old_project = repo.project
+        old_group = old_project.project_group
+        if not security.user_has_access_to_project_group_with_security_level(request.user, old_group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
+        new_project = Project.objects.filter(pk=request.data["id"]).first()
+        new_group = new_project.project_group
+        if old_group != new_group:
+            return JsonResponse({"Error": "Old project group does not match new project group"}, status=409)
+        repo.project = new_project
+        repo.save()
+        return JsonResponse({})
