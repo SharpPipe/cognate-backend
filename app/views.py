@@ -684,3 +684,14 @@ class RepoSetProjectView(views.APIView):
         repo.project = new_project
         repo.save()
         return JsonResponse({})
+
+
+class AddNewProject(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
+        project = Project.objects.create(name=request.data["name"], project_group=group)
+        return JsonResponse(ProjectSerializer(project).data)
