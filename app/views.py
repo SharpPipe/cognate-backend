@@ -16,7 +16,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
     GradeMilestone, UserProject, UserGrade, Milestone, Issue, TimeSpent, AutomateGrade, Feedback, Process, Committer, \
-    Commit
+    Commit, ProjectGrade
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     RegisterSerializer, GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, \
@@ -51,13 +51,36 @@ def get_root_category(category):
     return category
 
 
+def give_grade(query, amount, grading_type, grade_type, user, grade_category):
+    added_data = False
+    for old_grade in query.all():
+        if old_grade.grade_type == "P":
+            old_grade.delete()
+        elif old_grade.grade_type == grade_type:
+            old_grade.amount = amount
+            old_grade.save()
+            added_data = True
+    if not added_data:
+        if grading_type == "user":
+            UserGrade.objects.create(amount=amount, user_project=user, grade_category=grade_category, grade_type=grading_type)
+        else:
+            ProjectGrade.objects.create(amount=amount, project=user, grade_category=grade_category, grade_type=grading_type)
+
+
+def give_manual_grade(query, amount, grade_type, user, grade_category):
+    give_grade(query, amount, grade_type, "M", user, grade_category)
+
+
+def give_automated_grade_general(amount, grade_category, user, grades_query, grade_type):
+    give_grade(grades_query, amount, grade_type, "A", user, grade_category)
+
+
 def give_automated_grade(amount, grade_category, user_project, grades_query):
-    if grades_query.count() == 0:
-        UserGrade.objects.create(grade_type="A", amount=amount, user_project=user_project, grade_category=grade_category)
-    else:
-        grade = grades_query.first()
-        grade.amount = amount
-        grade.save()
+    give_automated_grade_general(amount, grade_category, user_project, grades_query, "user")
+
+
+def give_automated_project_grade(amount, grade_category, project, grades_query):
+    give_automated_grade_general(amount, grade_category, project, grades_query, "project")
 
 
 def get_grade_milestone_for_grade_category(grade_category):
@@ -69,33 +92,79 @@ def get_grade_milestone_for_grade_category(grade_category):
         return get_grade_milestone_for_grade_category(grade_category.parent_category)
 
 
-def recalculate_grade(grade_category, user_project):
+def get_child_grades(child_user_grades):
+    child_grades = []
+    for child_user_grade in child_user_grades:
+        q1 = child_user_grade.filter(grade_type="M")
+        if q1.count() == 0:
+            q2 = child_user_grade.filter(grade_type="A")
+            if q2.count() == 0:
+                child_grades.append(0)
+            else:
+                child_grades.append(q2.first().amount)
+        else:
+            child_grades.append(q1.first().amount)
+    return child_grades
+
+
+def recalculate_smi(grade_category, children, child_user_grades, user, query, grade_give_function):
+    func = GradeCategory.GRADE_TYPE_FUNCS[grade_category.grade_type]
+    total_potential = func([child.total for child in children])
+    child_grades = get_child_grades(child_user_grades)
+    total_value = func(child_grades)
+    amount = grade_category.total * total_value / total_potential
+    grade_give_function(amount, grade_category, user, query)
+
+
+def recalculate_project_grade(grade_category, project):
     children = grade_category.children.all()
     for child in children:
-        recalculate_grade(child, user_project)
-    child_user_grades = [UserGrade.objects.filter(grade_category=child).filter(user_project=user_project) for child in children]
+        recalculate_project_grade(child, project)
 
     if grade_category.grade_type in "SMI":
-        func = GradeCategory.GRADE_TYPE_FUNCS[grade_category.grade_type]
-        total_potential = func([child.total for child in children])
-        user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).all()
+        child_user_grades = [ProjectGrade.objects.filter(grade_category=child).filter(project=project) for child in children]
+        user_grade = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project).filter(grade_type="A")
+        recalculate_smi(grade_category, children, child_user_grades, project, user_grade, give_automated_project_grade)
+    elif grade_category.grade_type == "A":
+        automation = AutomateGrade.objects.filter(grade_category=grade_category)
+        if automation.count() == 0:
+            return
+        automation = automation.first()
+        user_grade = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project).filter(grade_type="A")
 
-        child_grades = []
-        for child_user_grade in child_user_grades:
-            q1 = child_user_grade.filter(grade_type="M")
-            if q1.count() == 0:
-                q2 = child_user_grade.filter(grade_type="A")
-                if q2.count() == 0:
-                    child_grades.append(0)
-                else:
-                    child_grades.append(q2.first().amount)
+        if automation.automation_type == "R":
+            amount = random.random() * grade_category.total  # TODO: Think about if grade has already been rolled, should we roll it again
+        elif automation.automation_type == "T":
+            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
+            time_spent = get_time_spent_for_project_in_milestone(project, grade_milestone)
+            print(f"Time spent: {time_spent}")
+            amount = decimal.Decimal(min(1, time_spent / automation.amount_needed)) * grade_category.total
+        elif automation.automation_type == "L":
+            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
+            lines_added = get_lines_added_for_project_in_milestone(project, grade_milestone)
+            print(f"Lines added: {lines_added}")
+            amount = decimal.Decimal(min(1, lines_added / automation.amount_needed)) * grade_category.total
+        give_automated_project_grade(amount, grade_category, project, user_grade)
+
+
+def recalculate_user_grade(grade_category, user_project):
+    children = grade_category.children.all()
+    for child in children:
+        if child.project_grade:
+            recalculate_project_grade(child, user_project.project)
+        else:
+            recalculate_user_grade(child, user_project)
+
+    if grade_category.grade_type in "SMI":
+        child_user_grades = []
+        for child in children:
+            if child.project_grade:
+                child_user_grades.append(ProjectGrade.objects.filter(grade_category=child).filter(project=user_project.project))
             else:
-                child_grades.append(q1.first().amount)
+                child_user_grades.append(UserGrade.objects.filter(grade_category=child).filter(user_project=user_project))
 
-        total_value = func(child_grades)
-        user_grade = user_grades.filter(grade_type="A")
-        amount = grade_category.total * total_value / total_potential
-        give_automated_grade(amount, grade_category, user_project, user_grade)
+        user_grade = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).filter(grade_type="A")
+        recalculate_smi(grade_category, children, child_user_grades, user_project, user_grade, give_automated_grade)
     elif grade_category.grade_type == "A":
         automation = AutomateGrade.objects.filter(grade_category=grade_category)
         if automation.count() == 0:
@@ -119,8 +188,12 @@ def recalculate_grade(grade_category, user_project):
 
 
 def recalculate_grade_category(grade_category):
-    for user_project in set([user_grade.user_project for user_grade in UserGrade.objects.filter(grade_category=grade_category).all()]):
-        recalculate_grade(grade_category, user_project)
+    if grade_category.project_grade:
+        for project in set([project_grade.project for project_grade in ProjectGrade.objects.filter(grade_category=grade_category).all()]):
+            recalculate_project_grade(grade_category, project)
+    else:
+        for user_project in set([user_grade.user_project for user_grade in UserGrade.objects.filter(grade_category=grade_category).all()]):
+            recalculate_user_grade(grade_category, user_project)
 
 
 def create_user(username, user_objects):
@@ -147,7 +220,7 @@ def create_user(username, user_objects):
     user_objects.append(user_object)
 
 
-def pick_user_grade(query):
+def pick_grade(query):
     options = query.all()
     order = ["M", "A", "P"]
     for target_type in order:
@@ -156,46 +229,84 @@ def pick_user_grade(query):
                 return option
 
 
-def grade_user(user_id, grade_id, amount):
-    user_project = UserProject.objects.filter(pk=user_id).first()
-    grade = GradeCategory.objects.filter(pk=grade_id).first()
-    search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade)
+def propagate_grade_up(user, grade_category):
+    parent = grade_category.parent_category
+    if parent is None:
+        return
+    if parent.grade_type not in "SMI":
+        return
 
-    added_data = False
-    for old_grade in search.all():
-        if old_grade.grade_type == "P":
-            old_grade.delete()
-        elif old_grade.grade_type == "M":
-            old_grade.amount = amount
-            old_grade.save()
-            added_data = True
-        elif old_grade.grade_type == "A":
-            pass
-    if not added_data:
-        new_grade = UserGrade.objects.create(amount=amount, user_project=user_project,
-                                             grade_category=grade, grade_type="M")
-
-    parent = grade.parent_category
-    while parent is not None:
-        if parent.grade_type in "SMI":
-            func = GradeCategory.GRADE_TYPE_FUNCS[parent.grade_type]
-            children = parent.children
-            children_total_potential = func([c.total for c in children.all()])
-            children_total_value = func(
-                [pick_user_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=c)).amount
-                 for c in children.all()])
-
-            # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
-            amount = parent.total * children_total_value / children_total_potential
-            grade_query = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent)
-            give_automated_grade(amount, parent, user_project, grade_query)
-            if grade_query.filter(grade_type="M").count() > 0:
-                break
+    if parent.project_grade:
+        if grade_category.project_grade:
+            propagate_project_grade_update_up(user, parent)
         else:
-            break
+            # TODO: Maybe allow this some day
+            pass
+    else:
+        if grade_category.project_grade:
+            for dev in UserProject.objects.filter(project=user).filter(disabled=False).all():
+                propagate_user_grade_update_up(dev, user, parent)
+        else:
+            propagate_user_grade_update_up(user, None, parent)
 
-        grade = parent
-        parent = grade.parent_category
+
+def propagate_user_grade_update_up(user_project, project, parent):
+    func = GradeCategory.GRADE_TYPE_FUNCS[parent.grade_type]
+    children = parent.children
+    children_total_potential = func([c.total for c in children.all()])
+    children_values = []
+    for child in children.all():
+        if child.project_grade:
+            children_values.append(pick_grade(ProjectGrade.objects.filter(project=project).filter(grade_category=child)).amount)
+        else:
+            children_values.append(pick_grade(UserGrade.objects.filter(user_project=user_project).filter(grade_category=child)).amount)
+    children_total_value = func(children_values)
+
+    amount = parent.total * children_total_value / children_total_potential
+    grade_query = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent)
+    give_automated_grade(amount, parent, user_project, grade_query)
+    if grade_query.filter(grade_type="M").count() > 0:
+        return
+    propagate_grade_up(user_project, parent)
+
+
+def propagate_project_grade_update_up(project, parent):
+    func = GradeCategory.GRADE_TYPE_FUNCS[parent.grade_type]
+    children = parent.children
+    children_total_potential = func([c.total for c in children.all()])
+    children_values = []
+    for child in children.all():
+        children_values.append(pick_grade(ProjectGrade.objects.filter(project=project).filter(grade_category=child)).amount)
+    children_total_value = func(children_values)
+
+    amount = parent.total * children_total_value / children_total_potential
+    grade_query = ProjectGrade.objects.filter(project=project).filter(grade_category=parent)
+    give_automated_project_grade(amount, parent, project, grade_query)
+    if grade_query.filter(grade_type="M").count() > 0:
+        return
+    propagate_grade_up(project, parent)
+
+
+def grade_user(user_id, grade_category, amount):
+    user_project = UserProject.objects.filter(pk=user_id).first()
+    search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade_category)
+    give_manual_grade(search, amount, "user", user_project, grade_category)
+    propagate_grade_up(user_project, grade_category)
+
+
+def grade_project(project_id, grade_category, amount):
+    project = Project.objects.filter(pk=project_id).first()
+    search = ProjectGrade.objects.filter(project=project).filter(grade_category=grade_category)
+    give_manual_grade(search, amount, "project", project, grade_category)
+    propagate_grade_up(project, grade_category)
+
+
+def grade(target_id, grade_id, amount):
+    grade_category = GradeCategory.objects.filter(pk=grade_id).first()
+    if grade_category.project_grade:
+        grade_project(target_id, grade_category, amount)
+    else:
+        grade_user(target_id, grade_category, amount)
 
 
 available_times = {
@@ -401,7 +512,10 @@ def get_grade_milestones_by_projectgroup(project_group):
         root_category = test_milestone.grade_category
         while root_category.parent_category is not None:
             root_category = root_category.parent_category
-        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+        query = GradeCalculation.objects.filter(grade_category=root_category)
+        if query.count() == 0:
+            continue
+        if project_group == query.first().project_group:
             grademilestones.append(test_milestone)
     return grademilestones
 
@@ -417,13 +531,24 @@ def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group,
         root_category = test_milestone.grade_category
         while root_category.parent_category is not None:
             root_category = root_category.parent_category
-        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+        query = GradeCalculation.objects.filter(grade_category=root_category)
+        if query.count() == 0:
+            continue
+        if project_group == query.first().project_group:
             return test_milestone
+
+
+def get_time_spent_for_project_in_milestone(project, grade_milestone):
+    return sum([get_time_spent_for_user_in_milestone(user_project, grade_milestone) for user_project in UserProject.objects.filter(project=project).filter(disabled=False).all()])
 
 
 def get_time_spent_for_user_in_milestone(user_project, grade_milestone):
     times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=grade_milestone).all()
     return sum([time_spend.amount for time_spend in times_spent if grade_milestone.start <= time_spend.time <= grade_milestone.end]) / 60
+
+
+def get_lines_added_for_project_in_milestone(project, grade_milestone):
+    return sum([get_lines_added_for_user_in_milestone(user_project, grade_milestone) for user_project in UserProject.objects.filter(project=project).filter(disabled=False).all()])
 
 
 def get_lines_added_for_user_in_milestone(user_project, grade_milestone):
@@ -442,12 +567,9 @@ def get_milestone_data_for_project(request, id, milestone_id):
         return {"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."}
 
     promised_json = []
-    print(milestone)
 
     user_projects = UserProject.objects.filter(project=project).filter(disabled=False).all()
-    print(user_projects)
     for user_project in user_projects:
-        print(user_project.account.username)
         user_list = []
         total_time = get_time_spent_for_user_in_milestone(user_project, milestone)
         promised_json.append({
@@ -457,7 +579,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
             "spent_time": total_time,
             "data": user_list
         })
-        for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
+        for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).filter(project_grade=False).all():
             category_data = {}
             user_list.append(category_data)
 
@@ -467,31 +589,33 @@ def get_milestone_data_for_project(request, id, milestone_id):
             category_data["given_points"] = None
             category_data["id"] = grade_category.pk
 
-            recalculate_grade(grade_category, user_project)
+            recalculate_user_grade(grade_category, user_project)
             user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
-            print(len(user_grades))
-            print(user_grades.first().grade_type)
-            """if user_grades.filter(grade_type="A").count() == 0:
-                automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
-                if automate_grade.count() > 0:
-                    automate_grade = automate_grade.first()
-                    if automate_grade.automation_type == "T":
-                        percent_done = min(1, total_time / automate_grade.amount_needed)
-                        points = decimal.Decimal(percent_done) * grade_category.total
-                        UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project,
-                                                 grade_category=grade_category)
-                        user_grades.filter(grade_type="P").delete()"""
 
             for user_grade in user_grades.all():
                 if user_grade.grade_type == "A":
                     category_data["automatic_points"] = user_grade.amount
-            for user_grade in user_grades.all():
-                if user_grade.grade_type == "M":
+                elif user_grade.grade_type == "M":
                     category_data["given_points"] = user_grade.amount
 
-            print(grade_category.name)
-        print()
-    return {"status": 200, "project_name": project.name, "project_data": promised_json}
+    project_grades = []
+    for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).filter(project_grade=True).all():
+        category_data = {}
+        project_grades.append(category_data)
+        category_data["name"] = grade_category.name
+        category_data["total"] = grade_category.total
+        category_data["automatic_points"] = None
+        category_data["given_points"] = None
+        category_data["id"] = grade_category.pk
+
+        recalculate_project_grade(grade_category, project)
+        grades = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project)
+        for grade in grades.all():
+            if grade.grade_type == "A":
+                category_data["automatic_points"] = grade.amount
+            elif grade.grade_type == "M":
+                category_data["given_points"] = grade.amount
+    return {"status": 200, "project_name": project.name, "users_data": promised_json, "project_data": project_grades}
 
 
 anonymous_json = {"Error": "Not logged in."}
@@ -698,6 +822,7 @@ class ProjectsView(views.APIView):
         if not user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
             return JsonResponse(no_access_json)
         projects = Project.objects.filter(project_group=group).all()
+        print(len(projects))
         root_category = group.grade_calculation.grade_category
         total = root_category.total
         data = []
@@ -710,6 +835,7 @@ class ProjectsView(views.APIView):
             dat["mentors"] = [x.account.username for x in project.userproject_set.filter(rights="E").all()]
 
             devs = []
+            [print(dev) for dev in project.userproject_set.filter(disabled=False).all()]
             for dev in project.userproject_set.filter(disabled=False).all():
                 dev_data = {}
                 grade_object = base_grade_filter.filter(user_project=dev).first()
@@ -792,12 +918,8 @@ class GradeCategoryView(views.APIView):
         project_group = root.grade_calculation.project_group
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         allowed_rights = ["A", "O"]
-        print(user_project_groups.count())
-        print(user_project_groups.first().rights)
         has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
 
-        print(serializer.is_valid())
-        print(has_rights)
         if has_rights and serializer.is_valid():
             grade_category = serializer.save()
             grade_category.parent_category = parent
@@ -866,24 +988,15 @@ class ProjectGradesView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        user_projects = UserProject.objects.filter(account=request.user).filter(project=project)
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project.project_group)
         if user_project_groups.count() == 0:
             # TODO: If user_projects has users, then the request came from student, he should see his own grades.
             return JsonResponse({4: 18})
-        members = project.userproject_set
-        project_group_admins = project.project_group.user_project_groups
-        print(members)
-        print(project_group_admins.count())
-        print(project.project_group)
 
         project_group = project.project_group
         root_category = project_group.grade_calculation.grade_category
-        print(root_category)
 
         users = [user_project.id for user_project in UserProject.objects.filter(project=project).all()]
-        print(users)
-
         return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
 
 
@@ -940,7 +1053,7 @@ class GradeUserView(views.APIView):
         if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(no_access_json)
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
-        grade_user(user_id, grade_id, request.data["amount"])
+        grade(user_id, grade_id, request.data["amount"])
         return JsonResponse({200: "OK"})
 
 
@@ -1089,7 +1202,7 @@ class BulkGradeView(views.APIView):
                 if not user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
                     return JsonResponse(no_access_json)
                 checked = True
-            grade_user(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
+            grade(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
         return JsonResponse({200: "OK"})
 
 

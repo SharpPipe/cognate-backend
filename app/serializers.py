@@ -51,7 +51,7 @@ class GradeCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GradeCategory
-        fields = ['id', 'name', 'total', 'grade_type', 'parent_category', 'description', 'children', 'grademilestone']
+        fields = ['id', 'name', 'total', 'grade_type', 'project_grade', 'parent_category', 'description', 'children', 'grademilestone']
 
 
 class AccountUsernameSerializer(serializers.ModelSerializer):
@@ -94,7 +94,7 @@ class GradeCategorySerializerWithGrades(serializers.ModelSerializer):
 
     class Meta:
         model = GradeCategory
-        fields = ['id', 'name', 'total', 'grade_type', 'parent_category', 'description', 'children', 'grademilestone', 'usergrade_set']
+        fields = ['id', 'name', 'total', 'grade_type', 'project_grade', 'parent_category', 'description', 'children', 'grademilestone', 'usergrade_set']
 
 
 class RegisterSerializer(serializers.Serializer):
