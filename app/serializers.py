@@ -126,7 +126,7 @@ class UserSerializer(serializers.ModelSerializer):
 class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Milestone
-        fields = ['id', 'grade_milestone', 'repository', 'title', 'gitlab_id']
+        fields = ['id', 'grade_milestone', 'repository', 'title', 'gitlab_id', 'gitlab_link']
 
 
 class ProcessSerializer(serializers.ModelSerializer):
