@@ -695,3 +695,15 @@ class AddNewProject(views.APIView):
             return JsonResponse(constants.no_access_json)
         project = Project.objects.create(name=request.data["name"], project_group=group)
         return JsonResponse(ProjectSerializer(project).data)
+
+
+class AddNewRepo(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project(request.user, project):
+            return JsonResponse(constants.no_access_json)
+        repo = Repository.objects.create(url=request.data["url"], gitlab_id=request.data["gitlab_id"], name=request.data["name"], project=project)
+        gitlab_helper.update_repository(repo.pk, request.user, [])
+        return JsonResponse(RepositorySerializer(repo).data)
