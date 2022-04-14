@@ -1,6 +1,6 @@
 from django.core.exceptions import ObjectDoesNotExist
 
-from .models import GradeMilestone, GradeCalculation, UserProject, UserProjectGroup, GradeCategory
+from .models import GradeMilestone, GradeCalculation, GradeCategory
 
 
 def get_grade_milestone_for_grade_category(grade_category):
@@ -42,30 +42,6 @@ def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group,
             continue
         if project_group == query.first().project_group:
             return test_milestone
-
-
-def user_has_access_to_project_group_with_security_level(user, project_group, roles):
-    user_project_groups = UserProjectGroup.objects.filter(project_group=project_group).filter(account=user)
-    for user_group in user_project_groups.all():
-        if user_group.rights in roles:
-            return True
-    return False
-
-
-def user_has_access_to_project_with_security_level(user, project, roles):
-    user_projects = UserProject.objects.filter(project=project).filter(account=user)
-    for user_project in user_projects.all():
-        if user_project.rights in roles:
-            return True
-    return user_has_access_to_project_group_with_security_level(user, project.project_group, roles)
-
-
-def user_has_access_to_project(user, project):
-    user_projects = UserProject.objects.filter(project=project).filter(account=user)
-    if user_projects.count() > 0:
-        return True
-    project_group = project.project_group
-    return user_has_access_to_project_group_with_security_level(user, project_group, ["A", "O"])
 
 
 def project_group_of_grade_category_id(grade_id):

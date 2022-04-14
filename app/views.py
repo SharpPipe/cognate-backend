@@ -27,6 +27,7 @@ from . import helpers
 from . import milestone_logic
 from . import constants
 from . import custom_serializers
+from . import security
 
 
 class ProjectGroupView(views.APIView):
@@ -58,7 +59,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
             return JsonResponse(constants.anonymous_json)
         print(f"Getting projects for project group {id}")
         group = ProjectGroup.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
 
         print(f"Project group is {group} with gitlab group id {group.group_id}")
@@ -108,7 +109,7 @@ class ProjectsView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         group = ProjectGroup.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
             return JsonResponse(constants.no_access_json)
         projects = Project.objects.filter(project_group=group).all()
         root_category = group.grade_calculation.grade_category
@@ -143,7 +144,7 @@ class RepositoryView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project(request.user, project):
+        if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
         grade_milestones = [x for x in model_traversal.get_grade_milestones_by_projectgroup(project.project_group)]
         repos = Repository.objects.filter(project=project)
@@ -258,7 +259,7 @@ class ProjectGroupGradingView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O", "V"]):
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O", "V"]):
             return JsonResponse(constants.no_access_json)
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         if user_project_groups.count() == 0:
@@ -332,7 +333,7 @@ class GradeUserView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project_group = model_traversal.project_group_of_grade_category_id(grade_id)
-        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
         grading_tree.grade(user_id, grade_id, request.data["amount"])
@@ -343,7 +344,7 @@ class RepositoryUpdateView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        if not model_traversal.user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):
+        if not security.user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):
             return JsonResponse(constants.no_access_json)
         repo = gitlab_helper.update_repository(id, request.user, [])
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
@@ -354,7 +355,7 @@ class ProjectGroupUpdateView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
         name = "project group update"
         hid = hashlib.sha256()
@@ -384,7 +385,7 @@ class ProjectMilestonesView(views.APIView):
         # TODO: repurpose this endpoint
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        if not model_traversal.user_has_access_to_project(request.user, Project.objects.filter(id=id).first()):
+        if not security.user_has_access_to_project(request.user, Project.objects.filter(id=id).first()):
             return JsonResponse(constants.no_access_json)
         data = []
         i = 1
@@ -405,7 +406,7 @@ class GroupSummaryMilestoneDataView(views.APIView):
             return JsonResponse(constants.anonymous_json)
         data = []
         project_group = ProjectGroup.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
         for project in project_group.project_set.all():
             project_res = milestone_logic.get_milestone_data_for_project(request, project.pk, milestone_id)
@@ -420,7 +421,7 @@ class ProjectMilestoneDataView(views.APIView):
     def get(self, request, id, milestone_id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        if not model_traversal.user_has_access_to_project(request.user, Project.objects.filter(pk=id).first()):
+        if not security.user_has_access_to_project(request.user, Project.objects.filter(pk=id).first()):
             return JsonResponse(constants.no_access_json)
         res = milestone_logic.get_milestone_data_for_project(request, id, milestone_id)
         if res["status"] == 418:
@@ -434,7 +435,7 @@ class ProjectMilestoneTimeSpentView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project(request.user, project):
+        if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
         milestone = model_traversal.get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
         if milestone is None:
@@ -453,7 +454,7 @@ class ParametricTimeSpentView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project(request.user, project):
+        if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
         user_projects = UserProject.objects.filter(project=project).all()
         dat = request.GET
@@ -479,7 +480,7 @@ class BulkGradeView(views.APIView):
         for sub_grade in request.data:
             if not checked:
                 project_group = model_traversal.project_group_of_grade_category_id(sub_grade["grade_id"])
-                if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+                if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
                     return JsonResponse(constants.no_access_json)
                 checked = True
             grading_tree.grade(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
@@ -547,7 +548,7 @@ class ProjectMilestoneConnectionsView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project = Project.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project(request.user, project):
+        if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
 
         # Grade milestones
@@ -572,7 +573,7 @@ class MilestoneSetGradeMilestoneView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         repo_milestone = Milestone.objects.filter(pk=id).first()
-        if not model_traversal.user_has_access_to_project(request.user, repo_milestone.repository.project):
+        if not security.user_has_access_to_project(request.user, repo_milestone.repository.project):
             return JsonResponse(constants.no_access_json)
         if request.data["id"] != -1:
             grade_milestone = GradeMilestone.objects.filter(pk=request.data["id"]).first()
@@ -632,7 +633,7 @@ class GradeCategoryRecalculateView(views.APIView):
     def get(self, request, id):
         grade_category = GradeCategory.objects.filter(pk=id).first()
         project_group = model_traversal.get_root_category(grade_category).grade_calculation.project_group
-        if not model_traversal.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse({}, status=401)
         grading_tree.recalculate_grade_category(grade_category)
         return JsonResponse({})
@@ -646,8 +647,63 @@ class ChangeDevColourView(views.APIView):
         if user_project.count() == 0:
             return JsonResponse({}, 404)
         user_project = user_project.first()
-        if not (model_traversal.user_has_access_to_project_with_security_level(request.user, user_project.project, ["O", "A", "T", "E"]) or user_project.account == request.user):
+        if not (security.user_has_access_to_project_with_security_level(request.user, user_project.project, ["O", "A", "T", "E"]) or user_project.account == request.user):
             return JsonResponse({}, 404)
         user_project.colour = request.data["colour"]
         user_project.save()
         return JsonResponse({})
+
+
+class ProjectRepoConnectionView(views.APIView):
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
+        projects = Project.objects.filter(project_group=group).all()
+        repos = []
+        for project in projects:
+            repos += Repository.objects.filter(project=project).all()
+        return JsonResponse({"projects": ProjectSerializer(projects, many=True).data, "repos": RepositorySerializer(repos, many=True).data})
+
+
+class RepoSetProjectView(views.APIView):
+    def put(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        repo = Repository.objects.filter(pk=id).first()
+        old_project = repo.project
+        old_group = old_project.project_group
+        if not security.user_has_access_to_project_group_with_security_level(request.user, old_group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
+        new_project = Project.objects.filter(pk=request.data["id"]).first()
+        new_group = new_project.project_group
+        if old_group != new_group:
+            return JsonResponse({"Error": "Old project group does not match new project group"}, status=409)
+        repo.project = new_project
+        repo.save()
+        return JsonResponse({})
+
+
+class AddNewProject(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
+        project = Project.objects.create(name=request.data["name"], project_group=group)
+        return JsonResponse(ProjectSerializer(project).data)
+
+
+class AddNewRepo(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project(request.user, project):
+            return JsonResponse(constants.no_access_json)
+        repo = Repository.objects.create(url=request.data["url"], gitlab_id=request.data["gitlab_id"], name=request.data["name"], project=project)
+        gitlab_helper.update_repository(repo.pk, request.user, [])
+        return JsonResponse(RepositorySerializer(repo).data)
