@@ -176,18 +176,8 @@ def grade_user(user_id, grade_id, amount):
 
     parent = grade.parent_category
     while parent is not None:
-        modify = False
-        if parent.grade_type == "S":
-            func = sum
-            modify = True
-        elif parent.grade_type == "M":
-            func = max
-            modify = True
-        elif parent.grade_type == "I":
-            func = min
-            modify = True
-
-        if modify:
+        if parent.grade_type in "SMI":
+            func = GradeCategory.GRADE_TYPE_FUNCS[parent.grade_type]
             children = parent.children
             children_total_potential = func([c.total for c in children.all()])
             children_total_value = func(
@@ -195,9 +185,11 @@ def grade_user(user_id, grade_id, amount):
                  for c in children.all()])
 
             # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
-            parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent).first()
-            parent_grade.amount = parent.total * children_total_value / children_total_potential
-            parent_grade.save()
+            amount = parent.total * children_total_value / children_total_potential
+            grade_query = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent)
+            give_automated_grade(amount, parent, user_project, grade_query)
+            if grade_query.filter(grade_type="M").count() > 0:
+                break
         else:
             break
 
