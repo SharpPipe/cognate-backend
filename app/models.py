@@ -27,7 +27,7 @@ class ProjectGroup(models.Model):
     parent_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
-        return self.name
+        return f"({self.pk}) - {self.name}"
 
 
 class Project(models.Model):
@@ -61,7 +61,7 @@ class UserProject(models.Model):
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
     disabled = models.BooleanField(default=False)
-    colour = models.CharField(max_length=6, null=True, blank=True)
+    colour = models.CharField(max_length=8, null=True, blank=True)
 
     def __str__(self):
         return self.account.username + " <-> " + self.project.name
