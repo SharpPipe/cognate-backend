@@ -97,6 +97,7 @@ class GradeCategory(models.Model):
     total = models.DecimalField(max_digits=100, decimal_places=5, default=1.0)
     grade_type = models.CharField(max_length=1, choices=GradeType.choices, default=GradeType.CUSTOM)
     description = models.TextField(null=True, blank=True)
+    project_grade = models.BooleanField(default=False)
     parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
     # This SET_NULL is a lifesaver, NEVER change
 
