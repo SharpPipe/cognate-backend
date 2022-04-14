@@ -531,7 +531,10 @@ def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group,
         root_category = test_milestone.grade_category
         while root_category.parent_category is not None:
             root_category = root_category.parent_category
-        if project_group == GradeCalculation.objects.filter(grade_category=root_category).first().project_group:
+        query = GradeCalculation.objects.filter(grade_category=root_category)
+        if query.count() == 0:
+            continue
+        if project_group == query.first().project_group:
             return test_milestone
 
 
