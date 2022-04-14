@@ -7,6 +7,7 @@ import hashlib
 import time
 import threading
 import datetime
+import colorsys
 
 from rest_framework import views
 from django.http import JsonResponse
@@ -603,7 +604,15 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
 
 
 def random_colour(with_alpha=False):
-    return "".join([random.choice("0123456789abcdef") for _ in range(8 if with_alpha else 6)])
+    # Generate random HSV colour, ranges given by Mary
+    h = random.random()
+    s = 0.6 + random.random() * 0.15
+    v = 0.7 + random.random() * 0.1
+    rgb = colorsys.hsv_to_rgb(h, s, v)
+    hex_value = '%02x%02x%02x' % (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+    if with_alpha:
+        hex_value += "".join([random.choice("0123456789abcdef") for _ in range(2)])
+    return hex_value
 
 
 class ProjectGroupView(views.APIView):
