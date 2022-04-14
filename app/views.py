@@ -50,37 +50,76 @@ def get_root_category(category):
     return category
 
 
-def recalculate_grade_category(grade_category, level=0):
+def give_automated_grade(amount, grade_category, user_project, grades_query):
+    if grades_query.count() == 0:
+        UserGrade.objects.create(grade_type="A", amount=amount, user_project=user_project, grade_category=grade_category)
+    else:
+        grade = grades_query.first()
+        grade.amount = amount
+        grade.save()
+
+
+def get_grade_milestone_for_grade_category(grade_category):
+    if grade_category is None:
+        return
+    try:
+        return grade_category.grademilestone
+    except ObjectDoesNotExist:
+        return get_grade_milestone_for_grade_category(grade_category.parent_category)
+
+
+def recalculate_grade(grade_category, user_project):
     children = grade_category.children.all()
-    child_user_grades = [UserGrade.objects.filter(grade_category=child) for child in children]
-    print(level * " " + grade_category.name)
     for child in children:
-        recalculate_grade_category(child, level+1)
+        recalculate_grade(child, user_project)
+    child_user_grades = [UserGrade.objects.filter(grade_category=child).filter(user_project=user_project) for child in children]
+
     if grade_category.grade_type in "SMI":
-        func = {
-            "S": sum,
-            "M": max,
-            "I": min
-        }[grade_category.grade_type]
+        func = GradeCategory.GRADE_TYPE_FUNCS[grade_category.grade_type]
         total_potential = func([child.total for child in children])
-        user_grades = UserGrade.objects.filter(grade_category=grade_category).all()
-        for user_grade in user_grades:
-            child_grades = []
-            for child_user_grade in child_user_grades:
-                q1 = child_user_grade.filter(user_project=user_grade.user_project)
-                q = q1.filter(grade_type="P") | q1.filter(grade_type="M")
-                child_grades.append(q.first())
-            # child_grades = [child_user_grades.filter(user_project=user_grade.user_project).filter(grade_type="P").first() for child_user_grades in child_user_grades]
-            # print(child_grades)
-            total_value = func([child.amount if child is not None else 0 for child in child_grades])
-            # print(grade_category.total)
-            # print(total_value)
-            # print(total_potential)
-            # print(total_value / total_potential)
-            # print(grade_category.total * total_value / total_potential)
-            user_grade.amount = grade_category.total * total_value / total_potential
-            user_grade.save()
-    print(level * " " + str(grade_category.pk))
+        user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).all()
+
+        child_grades = []
+        for child_user_grade in child_user_grades:
+            q1 = child_user_grade.filter(grade_type="M")
+            if q1.count() == 0:
+                q2 = child_user_grade.filter(grade_type="A")
+                if q2.count() == 0:
+                    child_grades.append(0)
+                else:
+                    child_grades.append(q2.first().amount)
+            else:
+                child_grades.append(q1.first().amount)
+
+        total_value = func(child_grades)
+        user_grade = user_grades.filter(grade_type="A")
+        amount = grade_category.total * total_value / total_potential
+        give_automated_grade(amount, grade_category, user_project, user_grade)
+    elif grade_category.grade_type == "A":
+        automation = AutomateGrade.objects.filter(grade_category=grade_category)
+        if automation.count() == 0:
+            return
+        automation = automation.first()
+        user_grade = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).filter(grade_type="A")
+
+        if automation.automation_type == "R":
+            amount = random.random() * grade_category.total  # TODO: Think about if grade has already been rolled, should we roll it again
+        elif automation.automation_type == "T":
+            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
+            time_spent = get_time_spent_for_user_in_milestone(user_project, grade_milestone)
+            print(f"Time spent: {time_spent}")
+            amount = decimal.Decimal(min(1, time_spent / automation.amount_needed)) * grade_category.total
+        elif automation.automation_type == "L":
+            grade_milestone = get_grade_milestone_for_grade_category(grade_category)
+            lines_added = get_lines_added_for_user_in_milestone(user_project, grade_milestone)
+            print(f"Lines added: {lines_added}")
+            amount = decimal.Decimal(min(1, lines_added / automation.amount_needed)) * grade_category.total
+        give_automated_grade(amount, grade_category, user_project, user_grade)
+
+
+def recalculate_grade_category(grade_category):
+    for user_project in set([user_grade.user_project for user_grade in UserGrade.objects.filter(grade_category=grade_category).all()]):
+        recalculate_grade(grade_category, user_project)
 
 
 def create_user(username, user_objects):
@@ -137,18 +176,8 @@ def grade_user(user_id, grade_id, amount):
 
     parent = grade.parent_category
     while parent is not None:
-        modify = False
-        if parent.grade_type == "S":
-            func = sum
-            modify = True
-        elif parent.grade_type == "M":
-            func = max
-            modify = True
-        elif parent.grade_type == "I":
-            func = min
-            modify = True
-
-        if modify:
+        if parent.grade_type in "SMI":
+            func = GradeCategory.GRADE_TYPE_FUNCS[parent.grade_type]
             children = parent.children
             children_total_potential = func([c.total for c in children.all()])
             children_total_value = func(
@@ -156,9 +185,11 @@ def grade_user(user_id, grade_id, amount):
                  for c in children.all()])
 
             # TODO: Refactor updating parent as well. For now lets agree to not manually overwrite sum, max or min type grades
-            parent_grade = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent).first()
-            parent_grade.amount = parent.total * children_total_value / children_total_potential
-            parent_grade.save()
+            amount = parent.total * children_total_value / children_total_potential
+            grade_query = UserGrade.objects.filter(user_project=user_project).filter(grade_category=parent)
+            give_automated_grade(amount, parent, user_project, grade_query)
+            if grade_query.filter(grade_type="M").count() > 0:
+                break
         else:
             break
 
@@ -394,6 +425,15 @@ def get_time_spent_for_user_in_milestone(user_project, grade_milestone):
     return sum([time_spend.amount for time_spend in times_spent if grade_milestone.start <= time_spend.time <= grade_milestone.end]) / 60
 
 
+def get_lines_added_for_user_in_milestone(user_project, grade_milestone):
+    project = user_project.project
+    repos = Repository.objects.filter(project=project).all()
+    commits = []
+    for repo in repos:
+        commits += [commit for commit in Commit.objects.filter(repository=repo).all() if grade_milestone.start <= commit.time <= grade_milestone.end]
+    return sum([commit.lines_added for commit in commits])
+
+
 def get_milestone_data_for_project(request, id, milestone_id):
     project = Project.objects.filter(pk=id).first()
     milestone = get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
@@ -419,14 +459,18 @@ def get_milestone_data_for_project(request, id, milestone_id):
         for grade_category in GradeCategory.objects.filter(parent_category=milestone.grade_category).all():
             category_data = {}
             user_list.append(category_data)
-            user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
+
             category_data["name"] = grade_category.name
             category_data["total"] = grade_category.total
             category_data["automatic_points"] = None
             category_data["given_points"] = None
             category_data["id"] = grade_category.pk
 
-            if user_grades.filter(grade_type="A").count() == 0:
+            recalculate_grade(grade_category, user_project)
+            user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project)
+            print(len(user_grades))
+            print(user_grades.first().grade_type)
+            """if user_grades.filter(grade_type="A").count() == 0:
                 automate_grade = AutomateGrade.objects.filter(grade_category=grade_category)
                 if automate_grade.count() > 0:
                     automate_grade = automate_grade.first()
@@ -435,7 +479,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
                         points = decimal.Decimal(percent_done) * grade_category.total
                         UserGrade.objects.create(grade_type="A", amount=points, user_project=user_project,
                                                  grade_category=grade_category)
-                        user_grades.filter(grade_type="P").delete()
+                        user_grades.filter(grade_type="P").delete()"""
 
             for user_grade in user_grades.all():
                 if user_grade.grade_type == "A":

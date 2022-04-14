@@ -79,6 +79,13 @@ class UserProjectGroup(models.Model):
 
 
 class GradeCategory(models.Model):
+
+    GRADE_TYPE_FUNCS = {
+        "S": sum,
+        "M": max,
+        "I": min
+    }
+
     class GradeType(models.TextChoices):
         CUSTOM = ("C", "Custom")
         SUM = ("S", "Sum")  # Grade is sum of children, then scaled using total
