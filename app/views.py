@@ -51,22 +51,36 @@ def get_root_category(category):
     return category
 
 
+def give_grade(query, amount, grading_type, grade_type, user, grade_category):
+    added_data = False
+    for old_grade in query.all():
+        if old_grade.grade_type == "P":
+            old_grade.delete()
+        elif old_grade.grade_type == grade_type:
+            old_grade.amount = amount
+            old_grade.save()
+            added_data = True
+    if not added_data:
+        if grading_type == "user":
+            UserGrade.objects.create(amount=amount, user_project=user, grade_category=grade_category, grade_type=grading_type)
+        else:
+            ProjectGrade.objects.create(amount=amount, project=user, grade_category=grade_category, grade_type=grading_type)
+
+
+def give_manual_grade(query, amount, grade_type, user, grade_category):
+    give_grade(query, amount, grade_type, "M", user, grade_category)
+
+
+def give_automated_grade_general(amount, grade_category, user, grades_query, grade_type):
+    give_grade(grades_query, amount, grade_type, "A", user, grade_category)
+
+
 def give_automated_grade(amount, grade_category, user_project, grades_query):
-    if grades_query.count() == 0:
-        UserGrade.objects.create(grade_type="A", amount=amount, user_project=user_project, grade_category=grade_category)
-    else:
-        grade = grades_query.first()
-        grade.amount = amount
-        grade.save()
+    give_automated_grade_general(amount, grade_category, user_project, grades_query, "user")
 
 
 def give_automated_project_grade(amount, grade_category, project, grades_query):
-    if grades_query.count() == 0:
-        ProjectGrade.objects.create(grade_type="A", amount=amount, project=project, grade_category=grade_category)
-    else:
-        grade = grades_query.first()
-        grade.amount = amount
-        grade.save()
+    give_automated_grade_general(amount, grade_category, project, grades_query, "project")
 
 
 def get_grade_milestone_for_grade_category(grade_category):
@@ -78,33 +92,39 @@ def get_grade_milestone_for_grade_category(grade_category):
         return get_grade_milestone_for_grade_category(grade_category.parent_category)
 
 
+def get_child_grades(child_user_grades):
+    child_grades = []
+    for child_user_grade in child_user_grades:
+        q1 = child_user_grade.filter(grade_type="M")
+        if q1.count() == 0:
+            q2 = child_user_grade.filter(grade_type="A")
+            if q2.count() == 0:
+                child_grades.append(0)
+            else:
+                child_grades.append(q2.first().amount)
+        else:
+            child_grades.append(q1.first().amount)
+    return child_grades
+
+
+def recalculate_smi(grade_category, children, child_user_grades, user, query, grade_give_function):
+    func = GradeCategory.GRADE_TYPE_FUNCS[grade_category.grade_type]
+    total_potential = func([child.total for child in children])
+    child_grades = get_child_grades(child_user_grades)
+    total_value = func(child_grades)
+    amount = grade_category.total * total_value / total_potential
+    grade_give_function(amount, grade_category, user, query)
+
+
 def recalculate_project_grade(grade_category, project):
     children = grade_category.children.all()
     for child in children:
         recalculate_project_grade(child, project)
-    child_user_grades = [ProjectGrade.objects.filter(grade_category=child).filter(project=project) for child in children]
 
     if grade_category.grade_type in "SMI":
-        func = GradeCategory.GRADE_TYPE_FUNCS[grade_category.grade_type]
-        total_potential = func([child.total for child in children])
-        project_grades = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project).all()
-
-        child_grades = []
-        for child_user_grade in child_user_grades:
-            q1 = child_user_grade.filter(grade_type="M")
-            if q1.count() == 0:
-                q2 = child_user_grade.filter(grade_type="A")
-                if q2.count() == 0:
-                    child_grades.append(0)
-                else:
-                    child_grades.append(q2.first().amount)
-            else:
-                child_grades.append(q1.first().amount)
-
-        total_value = func(child_grades)
-        user_grade = project_grades.filter(grade_type="A")
-        amount = grade_category.total * total_value / total_potential
-        give_automated_project_grade(amount, grade_category, project, user_grade)
+        child_user_grades = [ProjectGrade.objects.filter(grade_category=child).filter(project=project) for child in children]
+        user_grade = ProjectGrade.objects.filter(grade_category=grade_category).filter(project=project).filter(grade_type="A")
+        recalculate_smi(grade_category, children, child_user_grades, project, user_grade, give_automated_project_grade)
     elif grade_category.grade_type == "A":
         automation = AutomateGrade.objects.filter(grade_category=grade_category)
         if automation.count() == 0:
@@ -135,34 +155,16 @@ def recalculate_user_grade(grade_category, user_project):
         else:
             recalculate_user_grade(child, user_project)
 
-    child_user_grades = []
-    for child in children:
-        if child.project_grade:
-            child_user_grades.append(ProjectGrade.objects.filter(grade_category=child).filter(project=user_project.project))
-        else:
-            child_user_grades.append(UserGrade.objects.filter(grade_category=child).filter(user_project=user_project))
-
     if grade_category.grade_type in "SMI":
-        func = GradeCategory.GRADE_TYPE_FUNCS[grade_category.grade_type]
-        total_potential = func([child.total for child in children])
-        user_grades = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).all()
-
-        child_grades = []
-        for child_user_grade in child_user_grades:
-            q1 = child_user_grade.filter(grade_type="M")
-            if q1.count() == 0:
-                q2 = child_user_grade.filter(grade_type="A")
-                if q2.count() == 0:
-                    child_grades.append(0)
-                else:
-                    child_grades.append(q2.first().amount)
+        child_user_grades = []
+        for child in children:
+            if child.project_grade:
+                child_user_grades.append(ProjectGrade.objects.filter(grade_category=child).filter(project=user_project.project))
             else:
-                child_grades.append(q1.first().amount)
+                child_user_grades.append(UserGrade.objects.filter(grade_category=child).filter(user_project=user_project))
 
-        total_value = func(child_grades)
-        user_grade = user_grades.filter(grade_type="A")
-        amount = grade_category.total * total_value / total_potential
-        give_automated_grade(amount, grade_category, user_project, user_grade)
+        user_grade = UserGrade.objects.filter(grade_category=grade_category).filter(user_project=user_project).filter(grade_type="A")
+        recalculate_smi(grade_category, children, child_user_grades, user_project, user_grade, give_automated_grade)
     elif grade_category.grade_type == "A":
         automation = AutomateGrade.objects.filter(grade_category=grade_category)
         if automation.count() == 0:
@@ -288,34 +290,14 @@ def propagate_project_grade_update_up(project, parent):
 def grade_user(user_id, grade_category, amount):
     user_project = UserProject.objects.filter(pk=user_id).first()
     search = UserGrade.objects.filter(user_project=user_project).filter(grade_category=grade_category)
-
-    added_data = False
-    for old_grade in search.all():
-        if old_grade.grade_type == "P":
-            old_grade.delete()
-        elif old_grade.grade_type == "M":
-            old_grade.amount = amount
-            old_grade.save()
-            added_data = True
-    if not added_data:
-        new_grade = UserGrade.objects.create(amount=amount, user_project=user_project, grade_category=grade_category, grade_type="M")
+    give_manual_grade(search, amount, "user", user_project, grade_category)
     propagate_grade_up(user_project, grade_category)
 
 
 def grade_project(project_id, grade_category, amount):
     project = Project.objects.filter(pk=project_id).first()
     search = ProjectGrade.objects.filter(project=project).filter(grade_category=grade_category)
-
-    added_data = False
-    for old_grade in search.all():
-        if old_grade.grade_type == "P":
-            old_grade.delete()
-        elif old_grade.grade_type == "M":
-            old_grade.amount = amount
-            old_grade.save()
-            added_data = True
-    if not added_data:
-        new_grade = ProjectGrade.objects.create(amount=amount, project=project, grade_category=grade_category, grade_type="M")
+    give_manual_grade(search, amount, "project", project, grade_category)
     propagate_grade_up(project, grade_category)
 
 
