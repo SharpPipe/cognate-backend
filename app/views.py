@@ -1,12 +1,8 @@
-import string
-
 import requests
-import random
 import hashlib
 import time
 import threading
 import datetime
-import colorsys
 
 from rest_framework import views
 from django.http import JsonResponse
@@ -14,7 +10,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, TimeSpent, Feedback, Process, ProjectGrade
+    GradeMilestone, UserProject, UserGrade, Milestone, TimeSpent, Feedback, Process, AutomateGrade
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
     GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, ProcessSerializer, \
@@ -199,8 +195,14 @@ class GradeCategoryView(views.APIView):
             return JsonResponse(constants.no_access_json)
         serializer = GradeCategorySerializer(data=request.data)
         parent = GradeCategory.objects.filter(pk=id).first()
-        if not serializer.is_valid() or request.data["project_group"] is False and parent.project_group is True:
+        if not serializer.is_valid() or request.data["project_grade"] is False and parent.project_grade is True:
             return JsonResponse({"Error": "Invalid data"}, status=400)
+        if request.data["grade_type"] == "A":
+            if "automation_type" not in request.data.keys():
+                return JsonResponse({"Error": "Invalid data"}, status=400)
+            if request.data["automation_type"] in "LT":
+                if "amount_needed" not in request.data.keys():
+                    return JsonResponse({"Error": "Invalid data"}, status=400)
         grade_category = serializer.save()
         grade_category.parent_category = parent
         grade_category.save()
@@ -213,6 +215,11 @@ class GradeCategoryView(views.APIView):
                 grade_category=grade_category,
                 milestone_order_id=amount + 1
             )
+        if grade_category.grade_type == "A":
+            if request.data["automation_type"] in "LT":
+                AutomateGrade.objects.create(automation_type=request.data["automation_type"], amount_needed=request.data["amount_needed"], grade_category=grade_category)
+            elif request.data["automation_type"] == "R":
+                AutomateGrade.objects.create(automation_type=request.data["automation_type"], amount_needed=0, grade_category=grade_category)
         return JsonResponse(GradeCategorySerializer(grade_category).data)
 
     def delete(self, request, id):
