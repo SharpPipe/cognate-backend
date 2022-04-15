@@ -8,9 +8,20 @@ from . import model_traversal
 
 
 def add_user_grade_recursive(user_project, category):
-    UserGrade.objects.create(amount=0, user_project=user_project, grade_category=category)
+    if UserGrade.objects.filter(user_project=user_project, grade_category=category).count() == 0:
+        UserGrade.objects.create(amount=0, user_project=user_project, grade_category=category)
     for child in category.children.all():
-        add_user_grade_recursive(user_project, child)
+        if child.project_grade:
+            add_project_grade_recursive(user_project.project, child)
+        else:
+            add_user_grade_recursive(user_project, child)
+
+
+def add_project_grade_recursive(project, grade_category):
+    if ProjectGrade.objects.filter(project=project, grade_category=grade_category).count() == 0:
+        ProjectGrade.objects.create(amount=0, project=project, grade_category=grade_category)
+    for child in grade_category.children.all():
+        add_project_grade_recursive(project, child)
 
 
 def add_user_grade(user_project, project_group):

@@ -194,35 +194,31 @@ class GradeCategoryView(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
+        project_group = model_traversal.get_project_group_of_grade_category_id(id)
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
         serializer = GradeCategorySerializer(data=request.data)
+        if not serializer.is_valid():
+            return JsonResponse({"Error": "Invalid data"}, status=400)
         parent = GradeCategory.objects.filter(pk=id).first()
-
-        # Validate that user has correct access rights
-        root = parent
-        while root.parent_category is not None:
-            root = root.parent_category
-        project_group = root.grade_calculation.project_group
-        user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
-        allowed_rights = ["A", "O"]
-        has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
-
-        if has_rights and serializer.is_valid():
-            grade_category = serializer.save()
-            grade_category.parent_category = parent
-            grade_category.save()
-            for project in project_group.project_set.all():
+        grade_category = serializer.save()
+        grade_category.parent_category = parent
+        grade_category.save()
+        for project in project_group.project_set.all():
+            if grade_category.project_grade:
+                grading_tree.add_project_grade_recursive(project, grade_category)
+            else:
                 for user_project in project.userproject_set.all():
                     grading_tree.add_user_grade_recursive(user_project, grade_category)
-            if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
-                amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
-                GradeMilestone.objects.create(
-                    start=request.data["start"],
-                    end=request.data["end"],
-                    grade_category=grade_category,
-                    milestone_order_id=amount + 1
-                )
-            return JsonResponse(GradeCategorySerializer(grade_category).data)
-        return JsonResponse({4: 18})
+        if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
+            amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
+            GradeMilestone.objects.create(
+                start=request.data["start"],
+                end=request.data["end"],
+                grade_category=grade_category,
+                milestone_order_id=amount + 1
+            )
+        return JsonResponse(GradeCategorySerializer(grade_category).data)
 
     def delete(self, request, id):
         if request.user.is_anonymous:
@@ -332,7 +328,7 @@ class GradeUserView(views.APIView):
     def post(self, request, user_id, grade_id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        project_group = model_traversal.project_group_of_grade_category_id(grade_id)
+        project_group = model_traversal.get_project_group_of_grade_category_id(grade_id)
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
         print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
@@ -479,7 +475,7 @@ class BulkGradeView(views.APIView):
 
         for sub_grade in request.data:
             if not checked:
-                project_group = model_traversal.project_group_of_grade_category_id(sub_grade["grade_id"])
+                project_group = model_traversal.get_project_group_of_grade_category_id(sub_grade["grade_id"])
                 if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
                     return JsonResponse(constants.no_access_json)
                 checked = True
