@@ -220,6 +220,7 @@ class GradeCategoryView(views.APIView):
                 AutomateGrade.objects.create(automation_type=request.data["automation_type"], amount_needed=request.data["amount_needed"], grade_category=grade_category)
             elif request.data["automation_type"] == "R":
                 AutomateGrade.objects.create(automation_type=request.data["automation_type"], amount_needed=0, grade_category=grade_category)
+        grading_tree.recalculate_grade_category(grade_category)
         return JsonResponse(GradeCategorySerializer(grade_category).data)
 
     def delete(self, request, id):
@@ -233,12 +234,14 @@ class GradeCategoryView(views.APIView):
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         allowed_rights = ["O"]
         has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
+        parent = grade_category.parent_category
         if has_rights:
             try:
                 target_milestone = grade_category.grademilestone
             except ObjectDoesNotExist:
                 # Is not a milestone
                 grade_category.delete()
+                grading_tree.recalculate_grade_category(parent)
                 return JsonResponse({200: "OK"})
             else:
                 all_milestones = model_traversal.get_grade_milestones_by_projectgroup(project_group)
@@ -248,6 +251,7 @@ class GradeCategoryView(views.APIView):
                         milestone.save()
                 target_milestone.delete()
                 grade_category.delete()
+                grading_tree.recalculate_grade_category(parent)
                 return JsonResponse({200: "OK"})
         return JsonResponse({4: 18})
 
