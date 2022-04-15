@@ -7,6 +7,15 @@ from .models import UserProject, GradeCategory, ProjectGrade, UserGrade, Project
 from . import model_traversal
 
 
+def add_grades_to_category(grade_category, project_group):
+    for project in project_group.project_set.all():
+        if grade_category.project_grade:
+            add_project_grade_recursive(project, grade_category)
+        else:
+            for user_project in project.userproject_set.all():
+                add_user_grade_recursive(user_project, grade_category)
+
+
 def add_user_grade_recursive(user_project, category):
     if UserGrade.objects.filter(user_project=user_project, grade_category=category).count() == 0:
         UserGrade.objects.create(amount=0, user_project=user_project, grade_category=category)

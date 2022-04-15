@@ -198,18 +198,13 @@ class GradeCategoryView(views.APIView):
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
         serializer = GradeCategorySerializer(data=request.data)
-        if not serializer.is_valid():
-            return JsonResponse({"Error": "Invalid data"}, status=400)
         parent = GradeCategory.objects.filter(pk=id).first()
+        if not serializer.is_valid() or request.data["project_group"] is False and parent.project_group is True:
+            return JsonResponse({"Error": "Invalid data"}, status=400)
         grade_category = serializer.save()
         grade_category.parent_category = parent
         grade_category.save()
-        for project in project_group.project_set.all():
-            if grade_category.project_grade:
-                grading_tree.add_project_grade_recursive(project, grade_category)
-            else:
-                for user_project in project.userproject_set.all():
-                    grading_tree.add_user_grade_recursive(user_project, grade_category)
+        grading_tree.add_grades_to_category(grade_category, project_group)
         if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
             amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
             GradeMilestone.objects.create(
