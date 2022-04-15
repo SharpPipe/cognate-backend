@@ -44,7 +44,7 @@ def get_grademilestone_by_projectgroup_and_milestone_order_number(project_group,
             return test_milestone
 
 
-def project_group_of_grade_category_id(grade_id):
+def get_project_group_of_grade_category_id(grade_id):
     root_category = get_root_category(GradeCategory.objects.filter(id=grade_id).first())
     return root_category.grade_calculation.project_group
 
