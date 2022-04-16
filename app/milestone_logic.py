@@ -34,6 +34,7 @@ def get_milestone_data_for_project(request, id, milestone_id):
             category_data["total"] = grade_category.total
             category_data["automatic_points"] = None
             category_data["given_points"] = None
+            category_data["description"] = grade_category.description
             category_data["id"] = grade_category.pk
 
             grading_tree.recalculate_user_grade(grade_category, user_project)

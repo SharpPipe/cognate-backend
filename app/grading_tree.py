@@ -2,7 +2,7 @@ import decimal
 import random
 
 from .models import UserProject, GradeCategory, ProjectGrade, UserGrade, Project, AutomateGrade, TimeSpent, Commit, \
-    Repository
+    Repository, GradeMilestone
 
 from . import model_traversal
 
@@ -135,9 +135,9 @@ def give_grade(query, amount, grading_type, grade_type, user, grade_category):
             added_data = True
     if not added_data:
         if grading_type == "user":
-            UserGrade.objects.create(amount=amount, user_project=user, grade_category=grade_category, grade_type=grading_type)
+            UserGrade.objects.create(amount=amount, user_project=user, grade_category=grade_category, grade_type=grade_type)
         else:
-            ProjectGrade.objects.create(amount=amount, project=user, grade_category=grade_category, grade_type=grading_type)
+            ProjectGrade.objects.create(amount=amount, project=user, grade_category=grade_category, grade_type=grade_type)
 
 
 def grade_user(user_id, grade_category, amount):
@@ -282,3 +282,35 @@ def get_lines_added_for_user_in_milestone(user_project, grade_milestone):
     for repo in repos:
         commits += [commit for commit in Commit.objects.filter(repository=repo).all() if grade_milestone.start <= commit.time <= grade_milestone.end]
     return sum([commit.lines_added for commit in commits])
+
+
+def generate_grade_category_copy(grade_category, parent):
+    new_category = GradeCategory.objects.create(
+        name=grade_category.name,
+        total=grade_category.total,
+        grade_type=grade_category.grade_type,
+        description=grade_category.description,
+        project_grade=grade_category.project_grade,
+        parent_category=parent
+    )
+    if new_category.grade_type == "A":
+        old_automate_grade = AutomateGrade.objects.filter(grade_category=grade_category).first()
+        AutomateGrade.objects.create(
+            automation_type=old_automate_grade.automation_type,
+            amount_needed=old_automate_grade.amount_needed,
+            grade_category=new_category
+        )
+    gm_query = GradeMilestone.objects.filter(grade_category=grade_category)
+    project_group = model_traversal.get_project_group_of_grade_category_id(grade_category.pk)
+    if gm_query.count() > 0:
+        gm = gm_query.first()
+
+        amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
+        GradeMilestone.objects.create(
+            start=gm.start,
+            end=gm.end,
+            milestone_order_id=amount + 1
+        )
+    add_grades_to_category(grade_category, project_group)
+    for child in grade_category.children.all():
+        generate_grade_category_copy(child, new_category)
