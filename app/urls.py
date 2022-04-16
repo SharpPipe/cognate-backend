@@ -7,7 +7,7 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     ProjectMilestoneTimeSpentView, BulkGradeView, FeedbackView, GroupSummaryMilestoneDataView, \
     ProjectMilestoneConnectionsView, MilestoneSetGradeMilestoneView, TestLoginView, ProcessInfoView, \
     ProjectAddUserView, GradeCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
-    ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo
+    ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, GradeCategoryCopyView
 
 router = routers.DefaultRouter()
 
@@ -18,6 +18,7 @@ urlpatterns = [
     path("groups/<int:id>/", ProjectsView.as_view(), name="projects"),
     path("projects/<int:id>/", RepositoryView.as_view(), name="repos"),
     path("grade_category/<int:id>/", GradeCategoryView.as_view(), name="grade_categories"),
+    path("grade_category/<int:id>/copy/", GradeCategoryCopyView.as_view(), name="copy_grade_category"),
     path("grade_category/<int:id>/recalculate/", GradeCategoryRecalculateView.as_view(), name="recalculate_grade_category"),
     path("groups/<int:id>/grading/", ProjectGroupGradingView.as_view(), name="grading_system"),
     path("projects/<int:id>/grading/", ProjectGradesView.as_view(), name="project_grades"),
