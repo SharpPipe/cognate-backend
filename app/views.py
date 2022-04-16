@@ -284,6 +284,14 @@ class GradeCategoryView(views.APIView):
             grade_category.description = request.data["description"]
         if "name" in request.data.keys():
             grade_category.name = request.data["name"]
+        gm_query = GradeMilestone.objects.filter(grade_category=grade_category)
+        if gm_query.count() > 0:
+            gm = gm_query.first()
+            if "start" in request.data.keys():
+                gm.start = request.data["start"]
+            if "end" in request.data.keys():
+                gm.end = request.data["end"]
+            gm.save()
         grade_category.save()
         return JsonResponse(GradeCategorySerializer(grade_category).data)
 
