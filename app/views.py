@@ -271,6 +271,22 @@ class GradeCategoryView(views.APIView):
                 return JsonResponse({200: "OK"})
         return JsonResponse({4: 18})
 
+    def put(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = model_traversal.get_project_group_of_grade_category_id(id)
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
+        grade_category = GradeCategory.objects.filter(pk=id).first()
+        if "total" in request.data.keys():
+            grade_category.total = request.data["total"]
+        if "description" in request.data.keys():
+            grade_category.description = request.data["description"]
+        if "name" in request.data.keys():
+            grade_category.name = request.data["name"]
+        grade_category.save()
+        return JsonResponse(GradeCategorySerializer(grade_category).data)
+
 
 class ProjectGroupGradingView(views.APIView):
     def get(self, request, id):
