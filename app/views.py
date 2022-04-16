@@ -110,6 +110,7 @@ class ProjectsView(views.APIView):
         projects = Project.objects.filter(project_group=group).all()
         root_category = group.grade_calculation.grade_category
         data = []
+        rights = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=group).all()]
         base_grade_filter = UserGrade.objects.filter(grade_category=root_category)
         grade_milestones = [x for x in model_traversal.get_grade_milestones_by_projectgroup(group)]
         for project in projects:
@@ -132,7 +133,22 @@ class ProjectsView(views.APIView):
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
-        return JsonResponse(data, safe=False)
+        return JsonResponse({"data": data, "rights": rights}, safe=False)
+
+    def put(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O"]):
+            return JsonResponse(constants.no_access_json)
+        if "name" in request.data.keys():
+            group.name = request.data["name"]
+        if "description" in request.data.keys():
+            group.description = request.data["description"]
+        if "gitlab_token" in request.data.keys():
+            group.gitlab_token = request.data["gitlab_token"]
+        group.save()
+        return JsonResponse({})
 
 
 class RepositoryView(views.APIView):

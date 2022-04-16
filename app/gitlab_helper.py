@@ -10,11 +10,17 @@ from . import grading_tree
 from . import helpers
 
 
+def get_token(repo, user):
+    if repo.project.project_group.gitlab_token is not None:
+        return repo.project.project_group.gitlab_token
+    return user.profile.gitlab_token
+
+
 def get_members_from_repo(repo, user, get_all):
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
     endpoint_part = f"/projects/{repo.gitlab_id}/members" + ("/all" if get_all else "")
-    token_part = f"?private_token={user.profile.gitlab_token}"
+    token_part = f"?private_token={get_token(repo, user)}"
     print(token_part)
     answer = requests.get(base_url + api_part + endpoint_part + token_part)
     return answer.json()
@@ -94,9 +100,9 @@ def update_all_repos_in_group(project_group, user, process):
             repos.append(repository.pk)
     for i, repo in enumerate(repos):
         update_repository(repo, user, new_users)
-        process.completion_percentage = 100 * i / len(repos)
+        process.completion_percentage = 100 * (i + 1) / len(repos)
         process.save()
-        print(f"{100 * i / len(repos)}% done refreshing repos")
+        print(f"{100 * (i + 1) / len(repos)}% done refreshing repos")
     process.completion_percentage = 100
     process.status = "F"
     process.data = ProjectGroupSerializer(project_group).data
@@ -111,7 +117,7 @@ def update_repository(id, user, new_users):
     grade_category_root = project.project_group.grade_calculation.grade_category
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
-    token_part = f"?private_token={user.profile.gitlab_token}&per_page=100"
+    token_part = f"?private_token={get_token(repo, user)}&per_page=100"
 
     # Refresh users
     answer_json = get_members_from_repo(repo, user, False)

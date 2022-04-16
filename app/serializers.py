@@ -9,6 +9,7 @@ class ProjectGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectGroup
         fields = ['id', 'children_type', 'name', 'description', 'group_id']
+        optional_fields = ['group_id']
 
     def create(self, validated_data):
         return ProjectGroup.objects.create(**validated_data)
