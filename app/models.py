@@ -25,6 +25,7 @@ class ProjectGroup(models.Model):
     description = models.TextField()
     group_id = models.IntegerField(null=True, blank=True)
     parent_group = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
+    gitlab_token = models.CharField(max_length=1000, null=True, blank=True)
 
     def __str__(self):
         return f"({self.pk}) - {self.name}"
