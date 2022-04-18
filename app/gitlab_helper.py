@@ -175,7 +175,6 @@ def update_repository(id, user, new_users, process=None):
                 milestone_object.gitlab_link = milestone["web_url"]
                 milestone_object.save()
     print("Done")
-    return repo
 
     # Load all issues
     issues = []
