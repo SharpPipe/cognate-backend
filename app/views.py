@@ -631,7 +631,7 @@ class MilestoneSetGradeMilestoneView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         repo_milestone = Milestone.objects.filter(pk=id).first()
-        if not security.user_has_access_to_project(request.user, repo_milestone.repository.project):
+        if not security.user_has_access_to_project(request.user, repo_milestone.repository.project if repo_milestone.repository is not None else repo_milestone.project):
             return JsonResponse(constants.no_access_json)
         if request.data["id"] != -1:
             grade_milestone = GradeMilestone.objects.filter(pk=request.data["id"]).first()
