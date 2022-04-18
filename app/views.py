@@ -133,7 +133,7 @@ class ProjectsView(views.APIView):
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
-        return JsonResponse({"data": data, "rights": rights}, safe=False)
+        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(grade_milestones), "total_milestones": 7}, safe=False)
 
     def put(self, request, id):
         if request.user.is_anonymous:
@@ -189,6 +189,8 @@ class RepositoryView(views.APIView):
         for key in ["time_spent", "lines_added", "lines_removed"]:
             data["project"][key] = sum([x[key] for x in dev_list])
         data["milestones"] = milestone_logic.get_grademilestone_data_for_project(project, grade_milestones, True)
+        data["active_milestones"] = len(data["milestones"])
+        data["total_milestones"] = 7
         return JsonResponse(data, safe=False)
 
 
