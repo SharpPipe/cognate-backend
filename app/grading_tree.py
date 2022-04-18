@@ -309,7 +309,8 @@ def generate_grade_category_copy(grade_category, parent):
         GradeMilestone.objects.create(
             start=gm.start,
             end=gm.end,
-            milestone_order_id=amount + 1
+            milestone_order_id=amount + 1,
+            grade_category=new_category
         )
     add_grades_to_category(grade_category, project_group)
     for child in grade_category.children.all():
