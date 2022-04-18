@@ -497,7 +497,7 @@ class ProjectMilestoneTimeSpentView(views.APIView):
 
         promised_json = []
 
-        user_projects = UserProject.objects.filter(project=project).all()
+        user_projects = UserProject.objects.filter(project=project).filter(disabled=False).all()
         for user_project in user_projects:
             promised_json += TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
         return JsonResponse(custom_serializers.serialize_time_spent(promised_json), safe=False)
