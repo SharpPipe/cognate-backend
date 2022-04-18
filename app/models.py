@@ -203,6 +203,7 @@ class Feedback(models.Model):
 class Process(models.Model):
     class ProcessType(models.TextChoices):
         SYNC_GROUP = ("SG", "Sync group")
+        SYNC_REPO = ("SR", "Sync repo")
 
     class ProcessStatus(models.TextChoices):
         ONGOING = ("O", "Ongoing")
