@@ -9,6 +9,12 @@ def serialize_time_spent(times_spent):
         dat["title"] = dat["issue"]["title"]
         dat["gitlab_link"] = dat["issue"]["gitlab_link"]
         del dat["issue"]
-        dat["repo_id"] = time_spent.issue.milestone.repository.pk if time_spent.issue.milestone is not None else -1
+        if time_spent.issue.milestone is None:
+            dat["repo_id"] = -1
+        elif time_spent.issue.milestone.repository is None:
+            dat["repo_id"] = -1
+        else:
+            dat["repo_id"] = time_spent.issue.milestone.repository.pk
+
         return_json.append(dat)
     return return_json
