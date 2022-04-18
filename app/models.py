@@ -123,7 +123,8 @@ class GradeMilestone(models.Model):
 
 class Milestone(models.Model):
     grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.SET_NULL, null=True, blank=True)
-    repository = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name="milestones")
+    repository = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name="milestones", null=True, blank=True)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="milestones", null=True, blank=True)
     title = models.TextField(null=True, blank=True)
     gitlab_id = models.IntegerField()
     gitlab_link = models.TextField(null=True, blank=True)

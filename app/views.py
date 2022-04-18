@@ -616,6 +616,8 @@ class ProjectMilestoneConnectionsView(views.APIView):
         for repository in project.repository_set.all():
             for milestone in repository.milestones.all():
                 milestones.append(milestone)
+        for milestone in project.milestones.all():
+            milestones.append(milestone)
         m_serializer = MilestoneSerializer(milestones, many=True)
 
         return JsonResponse({

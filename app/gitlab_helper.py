@@ -156,6 +156,26 @@ def update_repository(id, user, new_users, process=None):
             milestone_object.gitlab_link = milestone["web_url"]
             milestone_object.save()
     if process is not None: update_process(process, 4, 10)
+    print("Here")
+    endpoint_part = f"/projects/{repo.gitlab_id}"
+    answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+    if answer["namespace"]["kind"] == "group":
+        print("GROUP")
+        endpoint_part = f"/groups/{answer['namespace']['id']}/milestones"
+        answer = requests.get(base_url + api_part + endpoint_part + token_part).json()
+        for milestone in answer:
+            gitlab_id = milestone["id"]
+            matching = repo.milestones.filter(gitlab_id=gitlab_id)
+            if matching.count() == 0:
+                Milestone.objects.create(project=repo.project, title=milestone["title"], gitlab_id=milestone["id"], gitlab_link=milestone["web_url"])
+            elif matching.count() == 1:
+                milestone_object = matching.first()
+                # TODO: Maybe record the changes somehow?
+                milestone_object.title = milestone["title"]
+                milestone_object.gitlab_link = milestone["web_url"]
+                milestone_object.save()
+    print("Done")
+    return repo
 
     # Load all issues
     issues = []
