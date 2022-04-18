@@ -111,7 +111,15 @@ def update_all_repos_in_group(project_group, user, process):
     print(f"Finished process with hash {process.hash}")
 
 
-def update_repository(id, user, new_users):
+def update_process(process, done, total, data=""):
+    process.completion_percentage = done / total
+    if process == done:
+        process.status = "F"
+        process.data = data
+    process.save()
+
+
+def update_repository(id, user, new_users, process=None):
     repo = Repository.objects.filter(pk=id).first()
     project = repo.project
     grade_category_root = project.project_group.grade_calculation.grade_category
@@ -121,14 +129,17 @@ def update_repository(id, user, new_users):
 
     # Refresh users
     answer_json = get_members_from_repo(repo, user, False)
+    if process is not None: update_process(process, 1, 10)
     user_objects = []
     for member in answer_json:
         if member["access_level"] >= 30:
             create_user(member['username'], user_objects)
+    if process is not None: update_process(process, 2, 10)
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
             user_project = UserProject.objects.create(rights="M", account=user_object, project=project, colour=helpers.random_colour())
             grading_tree.add_user_grade_recursive(user_project, grade_category_root)
+    if process is not None: update_process(process, 3, 10)
 
     # Load all milestones
     endpoint_part = f"/projects/{repo.gitlab_id}/milestones"
@@ -144,6 +155,7 @@ def update_repository(id, user, new_users):
             milestone_object.title = milestone["title"]
             milestone_object.gitlab_link = milestone["web_url"]
             milestone_object.save()
+    if process is not None: update_process(process, 4, 10)
 
     # Load all issues
     issues = []
@@ -156,6 +168,7 @@ def update_repository(id, user, new_users):
         if len(answer) < 100:
             break
         counter += 1
+    if process is not None: update_process(process, 5, 10)
     for issue in issues:
         gitlab_id = issue['id']
         gitlab_iid = issue['iid']
@@ -184,6 +197,7 @@ def update_repository(id, user, new_users):
                     to_save = True
             if to_save:
                 issue_object.save()
+    if process is not None: update_process(process, 6, 10)
 
     # Load all time spent
     time_spents = []
@@ -198,6 +212,7 @@ def update_repository(id, user, new_users):
             if len(answer) < 100:
                 break
             counter += 1
+    if process is not None: update_process(process, 7, 10)
     for id, note in time_spents:
         body = note['body']
         author = note['author']['username']
@@ -217,6 +232,7 @@ def update_repository(id, user, new_users):
                 TimeSpent.objects.create(gitlab_id=gitlab_id, amount=amount, time=created_at, issue=issue, user=user)
         else:
             pass
+    if process is not None: update_process(process, 8, 10)
 
     # Load all commits
     # TODO: Load commit data
@@ -230,6 +246,7 @@ def update_repository(id, user, new_users):
         if len(answer) < 100:
             break
         counter += 1
+    if process is not None: update_process(process, 9, 10)
     for commit in commits:
         commit_hash = commit["id"]
         if Commit.objects.filter(hash=commit_hash).count() > 0:
@@ -256,4 +273,5 @@ def update_repository(id, user, new_users):
                     committer.save()
         Commit.objects.create(hash=commit_hash, time=commit_time, message=message, lines_added=lines_added, lines_removed=lines_removed, author=committer, repository=repo)
         print(commit)
+    if process is not None: update_process(process, 10, 10)
     return repo

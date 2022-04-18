@@ -761,5 +761,23 @@ class AddNewRepo(views.APIView):
         if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
         repo = Repository.objects.create(url=request.data["url"], gitlab_id=request.data["gitlab_id"], name=request.data["name"], project=project)
-        gitlab_helper.update_repository(repo.pk, request.user, [])
-        return JsonResponse(RepositorySerializer(repo).data)
+        name = "repo update"
+        hid = hashlib.sha256()
+        [hid.update(str(x).encode()) for x in [name, id]]
+        old = Process.objects.filter(id_hash=hid.hexdigest()).filter(status="O")
+        if old.count() > 0:
+            old_p = old.first()
+            return JsonResponse({
+                "id": old_p.pk,
+                "hash": old_p.hash
+            })
+        h = hashlib.sha256()
+        [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
+        process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SR", status="O", completion_percentage=0)
+
+        t = threading.Thread(target=gitlab_helper.update_repository, args=[repo.pk, request.user, [], process], daemon=True)
+        t.start()
+        return JsonResponse({
+            "id": process.pk,
+            "hash": process.hash
+        })
