@@ -53,3 +53,9 @@ def get_root_category(category):
     if category.parent_category is not None:
         return get_root_category(category.parent_category)
     return category
+
+
+def get_project_from_milestone(milestone):
+    if milestone.repository is None:
+        return milestone.project
+    return milestone.repository.project
