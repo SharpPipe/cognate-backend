@@ -113,7 +113,7 @@ def update_all_repos_in_group(project_group, user, process):
 
 def update_process(process, done, total, data=""):
     process.completion_percentage = done / total
-    if process == done:
+    if total == done:
         process.status = "F"
         process.data = data
     process.save()
@@ -198,9 +198,9 @@ def update_repository(id, user, new_users, process=None):
         issue_query = Issue.objects.filter(gitlab_id=gitlab_id)
         if issue_query.count() == 0:
             if milestone is not None:
-                Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, gitlab_link=url, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
+                Issue.objects.create(gitlab_id=gitlab_id, title=title, repository=repo, gitlab_iid=gitlab_iid, gitlab_link=url, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
             else:
-                Issue.objects.create(gitlab_id=gitlab_id, title=title, gitlab_iid=gitlab_iid, gitlab_link=url)
+                Issue.objects.create(gitlab_id=gitlab_id, title=title, repository=repo, gitlab_iid=gitlab_iid, gitlab_link=url)
         else:
             issue_object = issue_query.first()
             to_save = False
@@ -214,6 +214,9 @@ def update_repository(id, user, new_users, process=None):
                         issue_object.has_been_moved = True
                     issue_object.milestone = milestone_object
                     to_save = True
+            if issue_object.repository is None:
+                issue_object.repository = repo
+                to_save = True
             if to_save:
                 issue_object.save()
     if process is not None: update_process(process, 6, 10)

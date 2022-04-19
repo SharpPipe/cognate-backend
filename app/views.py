@@ -169,8 +169,10 @@ class RepositoryView(views.APIView):
             "colour": x.colour
         } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
         for repo in repos.all():
+            print(f"Repo: {repo}")
             for commit in repo.commit_set.all():
                 user = commit.author.account
+                print(f"Commit: {commit}, made by {user}")
                 if user is not None and user.username in devs.keys():
                     # TODO: think of a better way to differentiate between "actual" lines and just pushing large files
                     if commit.lines_added < 2500:
@@ -512,11 +514,11 @@ class ParametricTimeSpentView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
-        user_projects = UserProject.objects.filter(project=project).all()
+        user_projects = UserProject.objects.filter(project=project).filter(disabled=False).all()
         dat = request.GET
         promised_json = []
         for user_project in user_projects:
-            base_filter = TimeSpent.objects.filter(user=user_project.account)
+            base_filter = TimeSpent.objects.filter(user=user_project.account).filter(issue__repository__project=project)
             if "start" in dat.keys() and "end" in dat.keys():
                 base_filter = base_filter.filter(time__range=[dat["start"], dat["end"]])
             elif "start" in dat.keys():
@@ -631,11 +633,7 @@ class MilestoneSetGradeMilestoneView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         repo_milestone = Milestone.objects.filter(pk=id).first()
-        print(repo_milestone)
-        print(repo_milestone.repository)
-        print(repo_milestone.project)
-        print(repo_milestone.repository.project)
-        if not security.user_has_access_to_project(request.user, repo_milestone.repository.project if repo_milestone.repository is not None else repo_milestone.project):
+        if not security.user_has_access_to_project(request.user, model_traversal.get_project_from_milestone(repo_milestone)):
             return JsonResponse(constants.no_access_json)
         if request.data["id"] != -1:
             grade_milestone = GradeMilestone.objects.filter(pk=request.data["id"]).first()
@@ -643,7 +641,7 @@ class MilestoneSetGradeMilestoneView(views.APIView):
             grade_milestone = None
         # TODO: Check that connection is allowed
         if grade_milestone is not None:
-            repo_milestone_project_group = repo_milestone.repository.project.project_group
+            repo_milestone_project_group = model_traversal.get_project_from_milestone(repo_milestone).project_group
             root_category = model_traversal.get_root_category(grade_milestone.grade_category)
             grade_milestone_project_group = GradeCalculation.objects.filter(grade_category=root_category).first().project_group
             if repo_milestone_project_group != grade_milestone_project_group:
