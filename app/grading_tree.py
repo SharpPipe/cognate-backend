@@ -17,7 +17,8 @@ def add_grades_to_category(grade_category, project_group):
 
 
 def add_user_grade_recursive(user_project, category):
-    if UserGrade.objects.filter(user_project=user_project, grade_category=category).count() == 0:
+    query = UserGrade.objects.filter(user_project=user_project).filter(grade_category=category)
+    if query.count() == 0:
         UserGrade.objects.create(amount=0, user_project=user_project, grade_category=category)
     for child in category.children.all():
         if child.project_grade:
@@ -27,7 +28,7 @@ def add_user_grade_recursive(user_project, category):
 
 
 def add_project_grade_recursive(project, grade_category):
-    if ProjectGrade.objects.filter(project=project, grade_category=grade_category).count() == 0:
+    if ProjectGrade.objects.filter(project=project).filter(grade_category=grade_category).count() == 0:
         ProjectGrade.objects.create(amount=0, project=project, grade_category=grade_category)
     for child in grade_category.children.all():
         add_project_grade_recursive(project, child)
@@ -312,6 +313,6 @@ def generate_grade_category_copy(grade_category, parent):
             milestone_order_id=amount + 1,
             grade_category=new_category
         )
-    add_grades_to_category(grade_category, project_group)
+    add_grades_to_category(new_category, project_group)
     for child in grade_category.children.all():
         generate_grade_category_copy(child, new_category)
