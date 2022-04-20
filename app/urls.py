@@ -6,7 +6,8 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     RepositoryUpdateView, ProjectGroupUpdateView, ProjectMilestonesView, ProjectMilestoneDataView, \
     ProjectMilestoneTimeSpentView, BulkGradeView, FeedbackView, GroupSummaryMilestoneDataView, \
     ProjectMilestoneConnectionsView, MilestoneSetGradeMilestoneView, TestLoginView, ProcessInfoView, \
-    ProjectAddUserView, GradeCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView
+    ProjectAddUserView, GradeCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
+    ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, GradeCategoryCopyView
 
 router = routers.DefaultRouter()
 
@@ -17,6 +18,7 @@ urlpatterns = [
     path("groups/<int:id>/", ProjectsView.as_view(), name="projects"),
     path("projects/<int:id>/", RepositoryView.as_view(), name="repos"),
     path("grade_category/<int:id>/", GradeCategoryView.as_view(), name="grade_categories"),
+    path("grade_category/<int:id>/copy/", GradeCategoryCopyView.as_view(), name="copy_grade_category"),
     path("grade_category/<int:id>/recalculate/", GradeCategoryRecalculateView.as_view(), name="recalculate_grade_category"),
     path("groups/<int:id>/grading/", ProjectGroupGradingView.as_view(), name="grading_system"),
     path("projects/<int:id>/grading/", ProjectGradesView.as_view(), name="project_grades"),
@@ -37,5 +39,9 @@ urlpatterns = [
     path("process/<int:id>/<str:hash>/", ProcessInfoView.as_view(), name="get_process_info"),
     path("projects/<int:id>/add_user/", ProjectAddUserView.as_view(), name="add_user_to_project"),
     path("projects/<int:id>/time_spent/", ParametricTimeSpentView.as_view(), name="parametric_time_spent"),
-    path("projects/<int:id>/change_dev_colour/", ChangeDevColourView.as_view(), name="change_dev_colour")
+    path("projects/<int:id>/change_dev_colour/", ChangeDevColourView.as_view(), name="change_dev_colour"),
+    path("groups/<int:id>/project_repo_connections/", ProjectRepoConnectionView.as_view(), name="project_repo_connections"),
+    path("repos/<int:id>/project/", RepoSetProjectView.as_view(), name="set_project_for_repo"),
+    path("groups/<int:id>/project/", AddNewProject.as_view(), name="add_new_project"),
+    path("projects/<int:id>/repo/", AddNewRepo.as_view(), name="add_new_repo")
 ]

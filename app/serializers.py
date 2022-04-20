@@ -9,6 +9,7 @@ class ProjectGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectGroup
         fields = ['id', 'children_type', 'name', 'description', 'group_id']
+        optional_fields = ['group_id']
 
     def create(self, validated_data):
         return ProjectGroup.objects.create(**validated_data)
@@ -51,7 +52,7 @@ class GradeCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GradeCategory
-        fields = ['id', 'name', 'total', 'grade_type', 'parent_category', 'description', 'children', 'grademilestone']
+        fields = ['id', 'name', 'total', 'grade_type', 'project_grade', 'parent_category', 'description', 'children', 'grademilestone']
 
 
 class AccountUsernameSerializer(serializers.ModelSerializer):
@@ -94,7 +95,7 @@ class GradeCategorySerializerWithGrades(serializers.ModelSerializer):
 
     class Meta:
         model = GradeCategory
-        fields = ['id', 'name', 'total', 'grade_type', 'parent_category', 'description', 'children', 'grademilestone', 'usergrade_set']
+        fields = ['id', 'name', 'total', 'grade_type', 'project_grade', 'parent_category', 'description', 'children', 'grademilestone', 'usergrade_set']
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -126,7 +127,7 @@ class UserSerializer(serializers.ModelSerializer):
 class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Milestone
-        fields = ['id', 'grade_milestone', 'repository', 'title', 'gitlab_id']
+        fields = ['id', 'grade_milestone', 'repository', 'title', 'gitlab_id', 'gitlab_link']
 
 
 class ProcessSerializer(serializers.ModelSerializer):
