@@ -148,8 +148,8 @@ def grade_user(user_id, grade_category, amount):
     propagate_grade_up(user_project, grade_category)
 
 
-def grade_project(project_id, grade_category, amount):
-    project = Project.objects.filter(pk=project_id).first()
+def grade_project(user_project_id, grade_category, amount):
+    project = UserProject.objects.filter(pk=user_project_id).first().project
     search = ProjectGrade.objects.filter(project=project).filter(grade_category=grade_category)
     give_manual_grade(search, amount, "project", project, grade_category)
     propagate_grade_up(project, grade_category)
