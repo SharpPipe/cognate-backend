@@ -56,7 +56,7 @@ def propagate_grade_up(user, grade_category):
             for dev in UserProject.objects.filter(project=user).filter(disabled=False).all():
                 propagate_user_grade_update_up(dev, user, parent)
         else:
-            propagate_user_grade_update_up(user, None, parent)
+            propagate_user_grade_update_up(user, user.project, parent)
 
 
 def propagate_user_grade_update_up(user_project, project, parent):

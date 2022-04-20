@@ -169,10 +169,8 @@ class RepositoryView(views.APIView):
             "colour": x.colour
         } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
         for repo in repos.all():
-            print(f"Repo: {repo}")
             for commit in repo.commit_set.all():
                 user = commit.author.account
-                print(f"Commit: {commit}, made by {user}")
                 if user is not None and user.username in devs.keys():
                     # TODO: think of a better way to differentiate between "actual" lines and just pushing large files
                     if commit.lines_added < 2500:
