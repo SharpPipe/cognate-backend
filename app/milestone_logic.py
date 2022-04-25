@@ -79,13 +79,14 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
         graded = False
         for dev in project.userproject_set.filter(disabled=False).all():
             user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
+            amount = user_grade.amount if user_grade is not None else 0
             # TODO: think of a better way to determine this
-            if user_grade.amount > 0:
+            if amount > 0:
                 graded = True
             dev_data = {
                 "name": dev.account.username,
                 "colour": dev.colour,
-                "points": user_grade.amount,
+                "points": amount,
                 "time_spent": grading_tree.get_time_spent_for_user_in_milestone(dev, grade_milestone)
             }
             if detailed:
