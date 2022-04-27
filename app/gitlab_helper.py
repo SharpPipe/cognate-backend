@@ -131,6 +131,14 @@ def update_repository(id, user, new_users, process=None):
     answer_json = get_members_from_repo(repo, user, False)
     if process is not None: update_process(process, 1, 10)
     user_objects = []
+    if not isinstance(answer_json, list):
+        print()
+        print("Error parsing response from get members")
+        print(f"Repo {repo.pk}")
+        print(f"Response was: {answer_json}")
+        print("Expected list")
+        print()
+        return repo
     for member in answer_json:
         if member["access_level"] >= 30:
             create_user(member['username'], user_objects)
@@ -194,31 +202,33 @@ def update_repository(id, user, new_users, process=None):
         title = issue['title']
         milestone = issue['milestone']
         url = issue["web_url"]
+        closed_by = issue["closed_by"]
+        author = issue["author"]
+        assignee = issue["assignee"]
+
         issues_to_refresh.append((gitlab_iid, gitlab_id))
         issue_query = Issue.objects.filter(gitlab_id=gitlab_id)
-        if issue_query.count() == 0:
-            if milestone is not None:
-                Issue.objects.create(gitlab_id=gitlab_id, title=title, repository=repo, gitlab_iid=gitlab_iid, gitlab_link=url, milestone=Milestone.objects.filter(gitlab_id=milestone['id']).first())
-            else:
-                Issue.objects.create(gitlab_id=gitlab_id, title=title, repository=repo, gitlab_iid=gitlab_iid, gitlab_link=url)
-        else:
-            issue_object = issue_query.first()
-            to_save = False
-            if issue_object.gitlab_link is None:
-                issue_object.gitlab_link = url
-                to_save = True
-            if milestone is not None:
-                milestone_object = Milestone.objects.filter(gitlab_id=milestone['id']).first()
-                if issue_object.milestone != milestone_object:
-                    if issue_object.milestone is None:
-                        issue_object.has_been_moved = True
-                    issue_object.milestone = milestone_object
-                    to_save = True
-            if issue_object.repository is None:
-                issue_object.repository = repo
-                to_save = True
-            if to_save:
-                issue_object.save()
+        issue_object = Issue.objects.create(gitlab_id=gitlab_id, gitlab_iid=gitlab_iid) if issue_query.count() == 0 else issue_query.first()
+
+        if milestone is not None:
+            milestone_object = Milestone.objects.filter(gitlab_id=milestone['id']).first()
+            if issue_object.milestone != milestone_object:
+                issue_object.has_been_moved = True
+            issue_object.milestone = milestone_object
+
+        if title is not None:
+            issue_object.title = title
+        if url is not None:
+            issue_object.gitlab_link = url
+        issue_object.repository = repo
+        if closed_by is not None:
+            issue_object.closed_by = User.objects.filter(username=closed_by["username"]).first()
+        if author is not None:
+            issue_object.author = User.objects.filter(username=author["username"]).first()
+        if assignee is not None:
+            issue_object.assignee = User.objects.filter(username=assignee["username"]).first()
+        issue_object.save()
+
     if process is not None: update_process(process, 6, 10)
 
     # Load all time spent

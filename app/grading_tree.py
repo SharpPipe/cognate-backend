@@ -267,6 +267,20 @@ def get_time_spent_for_project_in_milestone(project, grade_milestone):
     return sum([get_time_spent_for_user_in_milestone(user_project, grade_milestone) for user_project in UserProject.objects.filter(project=project).filter(disabled=False).all()])
 
 
+def get_issue_data_for_user_in_milestone(user_project, grade_milestone):
+    data = {
+        "authored": 0,
+        "closed": 0,
+        "participated": 0
+    }
+    for milestone in grade_milestone.milestone_set.all():
+        sub_query = milestone.issues
+        data["authored"] += sub_query.filter(author=user_project.account).count()
+        data["closed"] += sub_query.filter(closed_by=user_project.account).count()
+        data["participated"] += sub_query.filter(timespent__user=user_project.account).count()
+    return data
+
+
 def get_time_spent_for_user_in_milestone(user_project, grade_milestone):
     times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=grade_milestone).all()
     return sum([time_spend.amount for time_spend in times_spent if grade_milestone.start <= time_spend.time <= grade_milestone.end]) / 60

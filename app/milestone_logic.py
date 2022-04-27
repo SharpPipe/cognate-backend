@@ -87,7 +87,8 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
                 "name": dev.account.username,
                 "colour": dev.colour,
                 "points": amount,
-                "time_spent": grading_tree.get_time_spent_for_user_in_milestone(dev, grade_milestone)
+                "time_spent": grading_tree.get_time_spent_for_user_in_milestone(dev, grade_milestone),
+                "issues": grading_tree.get_issue_data_for_user_in_milestone(dev, grade_milestone)
             }
             if detailed:
                 grades = {}
