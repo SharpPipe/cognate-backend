@@ -134,10 +134,13 @@ class Issue(models.Model):
     gitlab_id = models.IntegerField()
     title = models.TextField(null=True, blank=True)
     gitlab_iid = models.IntegerField()
-    milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="issues", null=True, blank=True)
+    milestone = models.ForeignKey(Milestone, on_delete=models.SET_NULL, related_name="issues", null=True, blank=True)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name="issues", null=True, blank=True)
     has_been_moved = models.BooleanField(default=False)
     gitlab_link = models.TextField(null=True, blank=True)
+    closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_closed", null=True, blank=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_authored", null=True, blank=True)
+    assignee = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_assigned", null=True, blank=True)
 
 
 class TimeSpent(models.Model):
