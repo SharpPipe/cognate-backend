@@ -2,7 +2,7 @@ import decimal
 import random
 
 from .models import UserProject, GradeCategory, ProjectGrade, UserGrade, Project, AutomateGrade, TimeSpent, Commit, \
-    Repository, GradeMilestone
+    Repository, GradeMilestone, Issue
 
 from . import model_traversal
 
@@ -268,16 +268,16 @@ def get_time_spent_for_project_in_milestone(project, grade_milestone):
 
 
 def get_issue_data_for_user_in_milestone(user_project, grade_milestone):
-    data = {
-        "authored": 0,
-        "closed": 0,
-        "participated": 0
-    }
-    for milestone in grade_milestone.milestone_set.all():
-        sub_query = milestone.issues
-        data["authored"] += sub_query.filter(author=user_project.account).count()
-        data["closed"] += sub_query.filter(closed_by=user_project.account).count()
-        data["participated"] += sub_query.filter(timespent__user=user_project.account).count()
+    data = {}
+    data["authored"] = Issue.objects\
+        .filter(author=user_project.account)\
+        .filter(milestone__grade_milestone=grade_milestone).count()
+    data["closed"] = Issue.objects \
+        .filter(closed_by=user_project.account) \
+        .filter(milestone__grade_milestone=grade_milestone).count()
+    data["participated"] = Issue.objects\
+        .filter(timespent__user=user_project.account)\
+        .filter(milestone__grade_milestone=grade_milestone).count()
     return data
 
 
