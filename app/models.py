@@ -63,6 +63,8 @@ class UserProject(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
     disabled = models.BooleanField(default=False)
     colour = models.CharField(max_length=8, null=True, blank=True)
+    total_lines_added = models.IntegerField(default=0)
+    total_lines_removed = models.IntegerField(default=0)
 
     def __str__(self):
         return self.account.username + " <-> " + self.project.name
@@ -118,7 +120,7 @@ class GradeMilestone(models.Model):
     start = models.DateTimeField()
     end = models.DateTimeField()
     milestone_order_id = models.IntegerField()
-    grade_category = models.OneToOneField(GradeCategory, on_delete=models.CASCADE, null=True, blank=True)
+    grade_category = models.OneToOneField(GradeCategory, on_delete=models.CASCADE, null=True, blank=True, related_name="grade_milestone")
 
 
 class Milestone(models.Model):
@@ -159,6 +161,7 @@ class Commit(models.Model):
     lines_removed = models.IntegerField()
     author = models.ForeignKey(Committer, on_delete=models.CASCADE)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE)
+    counted_in_user_project_total = models.BooleanField(default=False)
 
 
 class GradeCalculation(models.Model):
