@@ -183,7 +183,7 @@ def recalculate_smi(grade_category, children, child_user_grades, user, query, gr
     total_potential = func([child.total for child in children])
     child_grades = get_child_grades(child_user_grades)
     total_value = func(child_grades)
-    amount = grade_category.total * total_value / total_potential
+    amount = grade_category.total * total_value / total_potential if total_potential != 0 else 0
     grade_give_function(amount, grade_category, user, query)
 
 
@@ -317,7 +317,7 @@ def generate_grade_category_copy(grade_category, parent):
         )
     gm_query = GradeMilestone.objects.filter(grade_category=grade_category)
     project_group = model_traversal.get_project_group_of_grade_category_id(grade_category.pk)
-    if gm_query.count() > 0:
+    if gm_query.count() > 0 :
         gm = gm_query.first()
 
         amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
@@ -330,3 +330,11 @@ def generate_grade_category_copy(grade_category, parent):
     add_grades_to_category(new_category, project_group)
     for child in grade_category.children.all():
         generate_grade_category_copy(child, new_category)
+
+
+def grade_category_has_milestone_parent(grade_category):
+    if GradeMilestone.objects.filter(grade_category=grade_category).count() > 0:
+        return True
+    if grade_category.parent_category is None:
+        return False
+    return grade_category_has_milestone_parent(grade_category.parent_category)
