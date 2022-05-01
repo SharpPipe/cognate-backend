@@ -1,3 +1,4 @@
+import datetime
 
 from django.contrib.auth.models import User
 from django.db import models
@@ -44,6 +45,7 @@ class Repository(models.Model):
     gitlab_id = models.IntegerField(null=True, blank=True)
     name = models.CharField(max_length=255, null=True, blank=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    last_issue_sync = models.DateTimeField(default=datetime.datetime.utcfromtimestamp(0))
 
 
 class UserProject(models.Model):
