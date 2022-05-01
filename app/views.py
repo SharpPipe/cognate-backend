@@ -233,7 +233,7 @@ class GradeCategoryView(views.APIView):
         grade_category.parent_category = parent
         grade_category.save()
         grading_tree.add_grades_to_category(grade_category, project_group)
-        if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
+        if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0 and not grading_tree.grade_category_has_milestone_parent(grade_category):
             amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
             GradeMilestone.objects.create(
                 start=request.data["start"],
