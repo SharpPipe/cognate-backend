@@ -158,18 +158,23 @@ class RepositoryView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
+        times = []
+        times.append(time.time())  # 0
         grade_milestones = [x for x in model_traversal.get_grade_milestones_by_projectgroup(project.project_group)]
+        times.append(time.time())  # 1
         repos = Repository.objects.filter(project=project)
         data = {}
         data["repositories"] = RepositorySerializer(repos, many=True).data
+        user_projects = [x for x in UserProject.objects.filter(project=project).filter(disabled=False).all()]
         devs = {x.account.username: {
             "time_spent": 0,
-            "lines_added": 0,
-            "lines_removed": 0,
+            "lines_added": x.total_lines_added,
+            "lines_removed": x.total_lines_removed,
             "colour": x.colour
-        } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
+        } for x in user_projects}
+        times.append(time.time())  # 2
         for repo in repos.all():
-            for commit in repo.commit_set.all():
+            for commit in repo.commit_set.filter(counted_in_user_project_total=False).all():
                 user = commit.author.account
                 if user is not None and user.username in devs.keys():
                     # TODO: think of a better way to differentiate between "actual" lines and just pushing large files
@@ -177,20 +182,33 @@ class RepositoryView(views.APIView):
                         devs[user.username]["lines_added"] += commit.lines_added
                     if commit.lines_removed < 2500:
                         devs[user.username]["lines_removed"] += commit.lines_removed
+                    commit.counted_in_user_project_total = True
+                    commit.save()
+        for user_project in user_projects:
+            user_project.total_lines_added = devs[user_project.account.username]["lines_added"]
+            user_project.total_lines_removed = devs[user_project.account.username]["lines_removed"]
+            user_project.save()
+
+        times.append(time.time())  # 3
         for dev in UserProject.objects.filter(project=project).filter(disabled=False).all():
             times_spent = TimeSpent.objects.filter(user=dev.account).filter(issue__milestone__repository__project=project).all()
             devs[dev.account.username]["time_spent"] = sum([time_spend.amount for time_spend in times_spent]) / 60
         dev_list = []
+        times.append(time.time())  # 4
         for key, val in devs.items():
             val["username"] = key
             dev_list.append(val)
         data["developers"] = dev_list
         data["project"] = {}
+        times.append(time.time())  # 5
         for key in ["time_spent", "lines_added", "lines_removed"]:
             data["project"][key] = sum([x[key] for x in dev_list])
         data["milestones"] = milestone_logic.get_grademilestone_data_for_project(project, grade_milestones, True)
+        times.append(time.time())  # 6
         data["active_milestones"] = len(data["milestones"])
         data["total_milestones"] = 7
+        for i in range(len(times) - 1):
+            print(f"{i} to {i + 1}: {times[i + 1] - times[i]}")
         return JsonResponse(data, safe=False)
 
 
