@@ -162,14 +162,15 @@ class RepositoryView(views.APIView):
         repos = Repository.objects.filter(project=project)
         data = {}
         data["repositories"] = RepositorySerializer(repos, many=True).data
+        user_projects = [x for x in UserProject.objects.filter(project=project).filter(disabled=False).all()]
         devs = {x.account.username: {
             "time_spent": 0,
-            "lines_added": 0,
-            "lines_removed": 0,
+            "lines_added": x.total_lines_added,
+            "lines_removed": x.total_lines_removed,
             "colour": x.colour
-        } for x in UserProject.objects.filter(project=project).filter(disabled=False).all()}
+        } for x in user_projects}
         for repo in repos.all():
-            for commit in repo.commit_set.all():
+            for commit in repo.commit_set.filter(counted_in_user_project_total=False).all():
                 user = commit.author.account
                 if user is not None and user.username in devs.keys():
                     # TODO: think of a better way to differentiate between "actual" lines and just pushing large files
@@ -177,6 +178,13 @@ class RepositoryView(views.APIView):
                         devs[user.username]["lines_added"] += commit.lines_added
                     if commit.lines_removed < 2500:
                         devs[user.username]["lines_removed"] += commit.lines_removed
+                    commit.counted_in_user_project_total = True
+                    commit.save()
+        for user_project in user_projects:
+            user_project.total_lines_added = devs[user_project.account.username]["lines_added"]
+            user_project.total_lines_removed = devs[user_project.account.username]["lines_removed"]
+            user_project.save()
+
         for dev in UserProject.objects.filter(project=project).filter(disabled=False).all():
             times_spent = TimeSpent.objects.filter(user=dev.account).filter(issue__milestone__repository__project=project).all()
             devs[dev.account.username]["time_spent"] = sum([time_spend.amount for time_spend in times_spent]) / 60
@@ -225,7 +233,7 @@ class GradeCategoryView(views.APIView):
         grade_category.parent_category = parent
         grade_category.save()
         grading_tree.add_grades_to_category(grade_category, project_group)
-        if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0:
+        if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0 and not grading_tree.grade_category_has_milestone_parent(grade_category):
             amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
             GradeMilestone.objects.create(
                 start=request.data["start"],

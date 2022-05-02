@@ -2,7 +2,7 @@ import decimal
 import random
 
 from .models import UserProject, GradeCategory, ProjectGrade, UserGrade, Project, AutomateGrade, TimeSpent, Commit, \
-    Repository, GradeMilestone
+    Repository, GradeMilestone, Issue
 
 from . import model_traversal
 
@@ -183,7 +183,7 @@ def recalculate_smi(grade_category, children, child_user_grades, user, query, gr
     total_potential = func([child.total for child in children])
     child_grades = get_child_grades(child_user_grades)
     total_value = func(child_grades)
-    amount = grade_category.total * total_value / total_potential
+    amount = grade_category.total * total_value / total_potential if total_potential != 0 else 0
     grade_give_function(amount, grade_category, user, query)
 
 
@@ -267,6 +267,20 @@ def get_time_spent_for_project_in_milestone(project, grade_milestone):
     return sum([get_time_spent_for_user_in_milestone(user_project, grade_milestone) for user_project in UserProject.objects.filter(project=project).filter(disabled=False).all()])
 
 
+def get_issue_data_for_user_in_milestone(user_project, grade_milestone):
+    data = {}
+    data["authored"] = Issue.objects\
+        .filter(author=user_project.account)\
+        .filter(milestone__grade_milestone=grade_milestone).count()
+    data["closed"] = Issue.objects \
+        .filter(closed_by=user_project.account) \
+        .filter(milestone__grade_milestone=grade_milestone).count()
+    data["participated"] = Issue.objects\
+        .filter(timespent__user=user_project.account)\
+        .filter(milestone__grade_milestone=grade_milestone).count()
+    return data
+
+
 def get_time_spent_for_user_in_milestone(user_project, grade_milestone):
     times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=grade_milestone).all()
     return sum([time_spend.amount for time_spend in times_spent if grade_milestone.start <= time_spend.time <= grade_milestone.end]) / 60
@@ -303,7 +317,7 @@ def generate_grade_category_copy(grade_category, parent):
         )
     gm_query = GradeMilestone.objects.filter(grade_category=grade_category)
     project_group = model_traversal.get_project_group_of_grade_category_id(grade_category.pk)
-    if gm_query.count() > 0:
+    if gm_query.count() > 0 :
         gm = gm_query.first()
 
         amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
@@ -316,3 +330,11 @@ def generate_grade_category_copy(grade_category, parent):
     add_grades_to_category(new_category, project_group)
     for child in grade_category.children.all():
         generate_grade_category_copy(child, new_category)
+
+
+def grade_category_has_milestone_parent(grade_category):
+    if GradeMilestone.objects.filter(grade_category=grade_category).count() > 0:
+        return True
+    if grade_category.parent_category is None:
+        return False
+    return grade_category_has_milestone_parent(grade_category.parent_category)

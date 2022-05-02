@@ -1,3 +1,4 @@
+import time
 
 from .models import Project, UserProject, GradeCategory, UserGrade, ProjectGrade, Feedback
 
@@ -79,15 +80,17 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
         graded = False
         for dev in project.userproject_set.filter(disabled=False).all():
             user_grade = UserGrade.objects.filter(grade_category=milestone_category).filter(user_project=dev).first()
+            amount = user_grade.amount if user_grade is not None else 0
             # TODO: think of a better way to determine this
-            if user_grade.amount > 0:
+            if amount > 0:
                 graded = True
             dev_data = {
                 "name": dev.account.username,
                 "colour": dev.colour,
-                "points": user_grade.amount,
-                "time_spent": grading_tree.get_time_spent_for_user_in_milestone(dev, grade_milestone)
+                "points": amount
             }
+            dev_data["time_spent"] = grading_tree.get_time_spent_for_user_in_milestone(dev, grade_milestone)
+            dev_data["issues"] = grading_tree.get_issue_data_for_user_in_milestone(dev, grade_milestone)
             if detailed:
                 grades = {}
                 for sub_grade in UserGrade.objects.filter(grade_category__parent_category=milestone_category).filter(user_project=dev).filter(grade_type="M").all():
@@ -101,7 +104,6 @@ def get_grademilestone_data_for_project(project, grade_milestones, detailed=Fals
         feedback = Feedback.objects.filter(type="PM").filter(project=project).filter(
             grade_milestone=grade_milestone).all()
         this_milestone["milestone_feedback"] = FeedbackSerializer(feedback, many=True).data
-
         if detailed:
             this_milestone["graded"] = graded
             this_milestone["start_time"] = grade_milestone.start

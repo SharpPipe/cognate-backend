@@ -1,3 +1,4 @@
+import datetime
 
 from django.contrib.auth.models import User
 from django.db import models
@@ -44,6 +45,7 @@ class Repository(models.Model):
     gitlab_id = models.IntegerField(null=True, blank=True)
     name = models.CharField(max_length=255, null=True, blank=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    last_issue_sync = models.DateTimeField(default=datetime.datetime.utcfromtimestamp(0))
 
 
 class UserProject(models.Model):
@@ -63,6 +65,8 @@ class UserProject(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
     disabled = models.BooleanField(default=False)
     colour = models.CharField(max_length=8, null=True, blank=True)
+    total_lines_added = models.IntegerField(default=0)
+    total_lines_removed = models.IntegerField(default=0)
 
     def __str__(self):
         return self.account.username + " <-> " + self.project.name
@@ -118,7 +122,7 @@ class GradeMilestone(models.Model):
     start = models.DateTimeField()
     end = models.DateTimeField()
     milestone_order_id = models.IntegerField()
-    grade_category = models.OneToOneField(GradeCategory, on_delete=models.CASCADE, null=True, blank=True)
+    grade_category = models.OneToOneField(GradeCategory, on_delete=models.CASCADE, null=True, blank=True, related_name="grade_milestone")
 
 
 class Milestone(models.Model):
@@ -134,10 +138,13 @@ class Issue(models.Model):
     gitlab_id = models.IntegerField()
     title = models.TextField(null=True, blank=True)
     gitlab_iid = models.IntegerField()
-    milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name="issues", null=True, blank=True)
+    milestone = models.ForeignKey(Milestone, on_delete=models.SET_NULL, related_name="issues", null=True, blank=True)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name="issues", null=True, blank=True)
     has_been_moved = models.BooleanField(default=False)
     gitlab_link = models.TextField(null=True, blank=True)
+    closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_closed", null=True, blank=True)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_authored", null=True, blank=True)
+    assignee = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_assigned", null=True, blank=True)
 
 
 class TimeSpent(models.Model):
@@ -156,6 +163,7 @@ class Commit(models.Model):
     lines_removed = models.IntegerField()
     author = models.ForeignKey(Committer, on_delete=models.CASCADE)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE)
+    counted_in_user_project_total = models.BooleanField(default=False)
 
 
 class GradeCalculation(models.Model):
