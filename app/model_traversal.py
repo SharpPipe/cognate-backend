@@ -9,7 +9,7 @@ def get_grade_milestone_for_grade_category(grade_category):
     if grade_category is None:
         return
     try:
-        return grade_category.grademilestone
+        return grade_category.grade_milestone
     except ObjectDoesNotExist:
         return get_grade_milestone_for_grade_category(grade_category.parent_category)
 
