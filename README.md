@@ -27,9 +27,19 @@ docker exec -it pgdb psql -U postgres
 \c postgres
 ```
 
+## To backup database
+```
+docker exec -t pgdb pg_dumpall -c -U postgres > dumpname.sql
+```
+
 ## To generate model picture
+### Everything
 ```
 python3 manage.py graph_models --pydot -a -g -o pic.png
+```
+### Gitlab
+```
+python3 manage.py graph_models -a -I Committer,Repository,Milestone,Issue,TimeSpent,Commit -o gitlab.png
 ```
 
 ## To setup CI / CD on new server
