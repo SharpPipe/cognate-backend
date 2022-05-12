@@ -32,7 +32,8 @@ ALLOWED_HOSTS = [
     '0.0.0.0',
     '127.0.0.1',
     '193.40.156.179',
-    '193.40.156.142'
+    '193.40.156.142',
+    'https://cs.ttu.ee/services/cognate/back'
 ]
 
 
@@ -74,7 +75,8 @@ CORS_ALLOWED_ORIGINS = (
     'http://127.0.0.1:8080',
     'http://35.228.100.147:8080',  # Kristjan's server
     'http://193.40.156.179:8080',  # Taltech server
-    'http://193.40.156.142:8080',  # Taltech dev server
+    'http://193.40.156.142:8080',  # Taltech dev server,
+    'https://cs.ttu.ee/'  # Live url
 )
 
 ROOT_URLCONF = 'core.urls'
