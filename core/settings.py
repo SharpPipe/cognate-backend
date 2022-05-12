@@ -33,7 +33,7 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     '193.40.156.179',
     '193.40.156.142',
-    'https://cs.ttu.ee/services/cognate/back'
+    'cs.ttu.ee'
 ]
 
 
