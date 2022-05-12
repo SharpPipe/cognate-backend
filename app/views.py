@@ -212,7 +212,7 @@ class ProfileView(views.APIView):
         return JsonResponse({})
 
 
-class GradeCategoryView(views.APIView):
+class AssessmentCategoryView(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -306,7 +306,7 @@ class GradeCategoryView(views.APIView):
         return JsonResponse(GradeCategorySerializer(grade_category).data)
 
 
-class GradeCategoryCopyView(views.APIView):
+class AssessmentCategoryCopyView(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -318,7 +318,7 @@ class GradeCategoryCopyView(views.APIView):
         return JsonResponse({})
 
 
-class ProjectGroupGradingView(views.APIView):
+class ProjectGroupAssessmentView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -333,7 +333,7 @@ class ProjectGroupGradingView(views.APIView):
         return JsonResponse(GradeCategorySerializer(root_category).data)
 
 
-class ProjectGradesView(views.APIView):
+class ProjectAssessmentsView(views.APIView):
     def get(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -350,15 +350,15 @@ class ProjectGradesView(views.APIView):
         return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
 
 
-class GradeUserView(views.APIView):
-    def post(self, request, user_id, grade_id):
+class AssessUserView(views.APIView):
+    def post(self, request, user_id, assessment_id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        project_group = model_traversal.get_project_group_of_grade_category_id(grade_id)
+        project_group = model_traversal.get_project_group_of_grade_category_id(assessment_id)
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
-        print(f"Grading user {user_id} and grade {grade_id} with data {request.data}")
-        grading_tree.grade(user_id, grade_id, request.data["amount"])
+        print(f"Assessing user {user_id} and assessment {assessment_id} with data {request.data}")
+        grading_tree.grade(user_id, assessment_id, request.data["amount"])
         return JsonResponse({200: "OK"})
 
 
@@ -473,7 +473,7 @@ class ParametricTimeSpentView(views.APIView):
         return JsonResponse(custom_serializers.serialize_time_spent(promised_json), safe=False)
 
 
-class BulkGradeView(views.APIView):
+class BulkAssessView(views.APIView):
     def post(self, request):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -633,7 +633,7 @@ class ProjectAddUserView(views.APIView):
         return JsonResponse({})
 
 
-class GradeCategoryRecalculateView(views.APIView):
+class AssessmentCategoryRecalculateView(views.APIView):
     def get(self, request, id):
         grade_category = GradeCategory.objects.filter(pk=id).first()
         project_group = model_traversal.get_root_category(grade_category).grade_calculation.project_group
