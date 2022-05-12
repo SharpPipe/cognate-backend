@@ -350,48 +350,6 @@ class ProjectGradesView(views.APIView):
         return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
 
 
-class RootAddUsers(views.APIView):
-    def post(self, request, id):
-        if request.user.is_anonymous:
-            return JsonResponse(constants.anonymous_json)
-        if not request.user.is_superuser:
-            return JsonResponse(constants.no_access_json)
-
-        users = request.data["data"]
-        user_objects = []
-        for user in users:
-            gitlab_helper.create_user(user, user_objects)
-
-        project_group = ProjectGroup.objects.filter(pk=id).first()
-        projects = Project.objects.filter(project_group=project_group)
-        grade_category_root = project_group.grade_calculation.grade_category
-        for project in projects:
-            users_found = []
-            for repo in project.repository_set.all():
-                answer_json = gitlab_helper.get_members_from_repo(repo, request.user, False)
-                for member in answer_json:
-                    for user in user_objects:
-                        if user.username in users_found:
-                            continue
-                        if member["username"] == user.username:
-                            if UserProject.objects.filter(account=user).filter(project=project).count() == 0:
-                                user_project = UserProject.objects.create(rights="M", account=user, project=project, colour=helpers.random_colour())
-                                grading_tree.add_user_grade_recursive(user_project, grade_category_root)
-                                users_found.append(user.username)
-                                print(f"{member['username']} found in project {project.name}")
-        return JsonResponse({200: "OK"})
-
-
-class MockAccounts(views.APIView):
-    def get(self, request):
-        if request.user.is_anonymous:
-            return JsonResponse(constants.anonymous_json)
-        if not request.user.is_superuser:
-            return JsonResponse(constants.no_access_json)
-        accounts = User.objects.filter(profile__actual_account=False)
-        return JsonResponse([x.id for x in accounts], safe=False)
-
-
 class GradeUserView(views.APIView):
     def post(self, request, user_id, grade_id):
         if request.user.is_anonymous:
@@ -442,26 +400,6 @@ class ProjectGroupUpdateView(views.APIView):
             "id": process.pk,
             "hash": process.hash
         })
-
-
-class ProjectMilestonesView(views.APIView):
-    def get(self, request, id):
-        # TODO: repurpose this endpoint
-        if request.user.is_anonymous:
-            return JsonResponse(constants.anonymous_json)
-        if not security.user_has_access_to_project(request.user, Project.objects.filter(id=id).first()):
-            return JsonResponse(constants.no_access_json)
-        data = []
-        i = 1
-        name = ""
-        while True:
-            res = milestone_logic.get_milestone_data_for_project(request, id, i)
-            if res["status"] == 418:
-                break
-            name = res["project_name"]
-            data.append({"milestone_number": i, "milestone_data": res["project_data"]})
-            i += 1
-        return JsonResponse({"status": 200, "project_name": name, "project_data": data})
 
 
 class GroupSummaryMilestoneDataView(views.APIView):
