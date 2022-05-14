@@ -8,7 +8,7 @@ from .models import User, Profile, Repository, UserProject, Milestone, Issue, Ti
 
 from .serializers import RegisterSerializer, ProjectGroupSerializer
 
-from . import grading_tree
+from . import assessment_tree
 from . import helpers
 
 
@@ -124,7 +124,7 @@ def update_process(process, done, total, data=""):
 def update_repository(id, user, new_users, process=None):
     repo = Repository.objects.filter(pk=id).first()
     project = repo.project
-    grade_category_root = project.project_group.grade_calculation.grade_category
+    assessment_category_root = project.project_group.assessment_calculation.assessment_category
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
     token_part = f"?private_token={get_token(repo, user)}&per_page=100"
@@ -153,7 +153,7 @@ def update_repository(id, user, new_users, process=None):
     for user_object in user_objects:
         if UserProject.objects.filter(account=user_object).filter(project=repo.project).count() == 0:
             user_project = UserProject.objects.create(rights="M", account=user_object, project=project, colour=helpers.random_colour())
-            grading_tree.add_user_grade_recursive(user_project, grade_category_root)
+            assessment_tree.add_user_assessment_recursive(user_project, assessment_category_root)
     times.append(time.time())  # 3
     if process is not None: update_process(process, 3, 10)
 

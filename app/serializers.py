@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
-from .models import ProjectGroup, Profile, Project, Repository, GradeCategory, GradeMilestone, UserGrade, UserProject, \
-    Milestone, Process, Feedback, TimeSpent, Issue
+from .models import ProjectGroup, Profile, Project, Repository, AssessmentCategory, AssessmentMilestone, \
+    UserAssessment, UserProject, Milestone, Process, Feedback, TimeSpent, Issue
 
 
 class ProjectGroupSerializer(serializers.ModelSerializer):
@@ -40,19 +40,19 @@ class RecursiveField(serializers.Serializer):
         return serializer.data
 
 
-class GradeMilestoneSerializer(serializers.ModelSerializer):
+class AssessmentMilestoneSerializer(serializers.ModelSerializer):
     class Meta:
-        model = GradeMilestone
+        model = AssessmentMilestone
         fields = ['id', 'start', 'end', 'milestone_order_id']
 
 
-class GradeCategorySerializer(serializers.ModelSerializer):
+class AssessmentCategorySerializer(serializers.ModelSerializer):
     children = RecursiveField(many=True, required=False)
-    grademilestone = GradeMilestoneSerializer(required=False)
+    assessmentmilestone = AssessmentMilestoneSerializer(required=False)
 
     class Meta:
-        model = GradeCategory
-        fields = ['id', 'name', 'total', 'grade_type', 'project_grade', 'parent_category', 'description', 'children', 'grademilestone']
+        model = AssessmentCategory
+        fields = ['id', 'name', 'total', 'assessment_type', 'project_assessment', 'parent_category', 'description', 'children', 'assessmentmilestone']
 
 
 class AccountUsernameSerializer(serializers.ModelSerializer):
@@ -69,33 +69,33 @@ class UserProjectSerializer(serializers.ModelSerializer):
         fields = ['id', 'account', 'colour']
 
 
-class UserGradeSerializer(serializers.ModelSerializer):
+class UserAssessmentSerializer(serializers.ModelSerializer):
     user_project = UserProjectSerializer()
 
     class Meta:
-        model = UserGrade
+        model = UserAssessment
         fields = ['amount', 'user_project']
         # list_serializer_class = IsActiveListSerializer
 
 
-class UserGradeListSerializer(serializers.ListSerializer):
+class UserAssessmentListSerializer(serializers.ListSerializer):
 
-    child = UserGradeSerializer()
+    child = UserAssessmentSerializer()
 
     def to_representation(self, data):
         data = data.filter(user_project__in=self.child.context['user_projects'])
-        return super(UserGradeListSerializer, self).to_representation(data)
+        return super(UserAssessmentListSerializer, self).to_representation(data)
 
 
-class GradeCategorySerializerWithGrades(serializers.ModelSerializer):
+class AssessmentCategorySerializerWithAssessments(serializers.ModelSerializer):
 
     children = RecursiveField(many=True, required=False)
-    grademilestone = GradeMilestoneSerializer(required=False)
-    usergrade_set = UserGradeListSerializer()
+    assessmentmilestone = AssessmentMilestoneSerializer(required=False)
+    userassessment_set = UserAssessmentListSerializer()
 
     class Meta:
-        model = GradeCategory
-        fields = ['id', 'name', 'total', 'grade_type', 'project_grade', 'parent_category', 'description', 'children', 'grademilestone', 'usergrade_set']
+        model = AssessmentCategory
+        fields = ['id', 'name', 'total', 'assessment_type', 'project_assessment', 'parent_category', 'description', 'children', 'assessmentmilestone', 'userassessment_set']
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -127,7 +127,7 @@ class UserSerializer(serializers.ModelSerializer):
 class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Milestone
-        fields = ['id', 'grade_milestone', 'repository', 'title', 'gitlab_id', 'gitlab_link']
+        fields = ['id', 'assessment_milestone', 'repository', 'title', 'gitlab_id', 'gitlab_link']
 
 
 class ProcessSerializer(serializers.ModelSerializer):

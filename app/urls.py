@@ -4,7 +4,7 @@ from rest_framework import routers
 from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, ProjectsView, RepositoryView, \
     AssessmentCategoryView, ProjectGroupAssessmentView, ProjectAssessmentsView, AssessUserView, RepositoryUpdateView, \
     ProjectGroupUpdateView, ProjectMilestoneDataView, ProjectMilestoneTimeSpentView, BulkAssessView, FeedbackView, \
-    GroupSummaryMilestoneDataView, ProjectMilestoneConnectionsView, MilestoneSetGradeMilestoneView, TestLoginView, \
+    GroupSummaryMilestoneDataView, ProjectMilestoneConnectionsView, MilestoneSetAssessmentMilestoneView, TestLoginView, \
     ProcessInfoView, ProjectAddUserView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
     ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, AssessmentCategoryCopyView
 
@@ -34,11 +34,11 @@ urlpatterns = [
     path("projects/<int:id>/repo/", AddNewRepo.as_view(), name="add_new_repo"),
     path("repos/<int:id>/project/", RepoSetProjectView.as_view(), name="set_project_for_repo"),
     path("projects/<int:id>/milestone_connections/", ProjectMilestoneConnectionsView.as_view(), name="project_milestone_connections"),
-    path("milestones/<int:id>/grade_milestone/", MilestoneSetGradeMilestoneView.as_view(), name="set_grade_milestone_for_milestone"),
+    path("milestones/<int:id>/assessment_milestone/", MilestoneSetAssessmentMilestoneView.as_view(), name="set_assessment_milestone_for_milestone"),
     path("repositories/<int:id>/update/", RepositoryUpdateView.as_view(), name="update_repository"),
 
     path("projects/<int:id>/assessments/", ProjectAssessmentsView.as_view(), name="project_assessments"),
-    path("users/<int:user_id>/assess/<int:grade_id>/", AssessUserView.as_view(), name="assess_user"),
+    path("users/<int:user_id>/assess/<int:assessment_id>/", AssessUserView.as_view(), name="assess_user"),
     path("bulk_assess/", BulkAssessView.as_view(), name="bulk_assess"),
 
     path("groups/", ProjectGroupView.as_view(), name="groups"),

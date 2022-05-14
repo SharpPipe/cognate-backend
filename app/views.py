@@ -9,14 +9,15 @@ from django.http import JsonResponse
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
-from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, GradeCategory, GradeCalculation, \
-    GradeMilestone, UserProject, UserGrade, Milestone, TimeSpent, Feedback, Process, AutomateGrade
+from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, AssessmentCategory, \
+    AssessmentCalculation, AssessmentMilestone, UserProject, UserAssessment, Milestone, TimeSpent, Feedback, Process, \
+    AutomateAssessment
 
-from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, GradeCategorySerializer, \
-    GradeCategorySerializerWithGrades, MilestoneSerializer, GradeMilestoneSerializer, ProcessSerializer, \
-    FeedbackSerializer
+from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, \
+    AssessmentCategorySerializer, AssessmentCategorySerializerWithAssessments, MilestoneSerializer, \
+    AssessmentMilestoneSerializer, ProcessSerializer, FeedbackSerializer
 
-from . import grading_tree
+from . import assessment_tree
 from . import model_traversal
 from . import gitlab_helper
 from . import helpers
@@ -44,8 +45,8 @@ class ProjectGroupView(views.APIView):
         if serializer.is_valid():
             project_group = serializer.save()
             UserProjectGroup.objects.create(rights="O", account=request.user, project_group=project_group)
-            grade_category = GradeCategory.objects.create(name="root", grade_type="S")
-            GradeCalculation.objects.create(grade_category=grade_category, project_group=project_group)
+            assessment_category = AssessmentCategory.objects.create(name="root", assessment_type="S")
+            AssessmentCalculation.objects.create(assessment_category=assessment_category, project_group=project_group)
         return JsonResponse({})
 
 
@@ -95,7 +96,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
                     continue
                 user_project = UserProject.objects.create(rights="M", account=user, project=project_object, colour=helpers.random_colour())
-                grading_tree.add_user_grade(user_project, group)
+                assessment_tree.add_user_assessment(user_project, group)
 
         return JsonResponse({"data": data})
 
@@ -108,11 +109,11 @@ class ProjectsView(views.APIView):
         if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["A", "O", "V"]):
             return JsonResponse(constants.no_access_json)
         projects = Project.objects.filter(project_group=group).all()
-        root_category = group.grade_calculation.grade_category
+        root_category = group.assessment_calculation.assessment_category
         data = []
         rights = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=group).all()]
-        base_grade_filter = UserGrade.objects.filter(grade_category=root_category)
-        grade_milestones = [x for x in model_traversal.get_grade_milestones_by_projectgroup(group)]
+        base_assessment_filter = UserAssessment.objects.filter(assessment_category=root_category)
+        assessment_milestones = [x for x in model_traversal.get_assessment_milestones_by_projectgroup(group)]
         for project in projects:
             dat = ProjectSerializer(project).data
 
@@ -122,18 +123,18 @@ class ProjectsView(views.APIView):
             devs = []
             for dev in project.userproject_set.filter(disabled=False).all():
                 dev_data = {}
-                grade_object = base_grade_filter.filter(user_project=dev).first()
-                dev_data["points"] = grade_object.amount
+                assessment_object = base_assessment_filter.filter(user_project=dev).first()
+                dev_data["points"] = assessment_object.amount
                 dev_data["name"] = dev.account.username
                 dev_data["colour"] = dev.colour
                 devs.append(dev_data)
 
-            milestones = milestone_logic.get_grademilestone_data_for_project(project, grade_milestones)
+            milestones = milestone_logic.get_assessmentmilestone_data_for_project(project, assessment_milestones)
 
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
-        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(grade_milestones), "total_milestones": 7}, safe=False)
+        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(assessment_milestones), "total_milestones": 7}, safe=False)
 
     def put(self, request, id):
         if request.user.is_anonymous:
@@ -158,7 +159,7 @@ class RepositoryView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
-        grade_milestones = [x for x in model_traversal.get_grade_milestones_by_projectgroup(project.project_group)]
+        assessment_milestones = [x for x in model_traversal.get_assessment_milestones_by_projectgroup(project.project_group)]
         repos = Repository.objects.filter(project=project)
         data = {}
         data["repositories"] = RepositorySerializer(repos, many=True).data
@@ -196,7 +197,7 @@ class RepositoryView(views.APIView):
         data["project"] = {}
         for key in ["time_spent", "lines_added", "lines_removed"]:
             data["project"][key] = sum([x[key] for x in dev_list])
-        data["milestones"] = milestone_logic.get_grademilestone_data_for_project(project, grade_milestones, True)
+        data["milestones"] = milestone_logic.get_assessmentmilestone_data_for_project(project, assessment_milestones, True)
         data["active_milestones"] = len(data["milestones"])
         data["total_milestones"] = 7
         return JsonResponse(data, safe=False)
@@ -216,85 +217,85 @@ class AssessmentCategoryView(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        project_group = model_traversal.get_project_group_of_grade_category_id(id)
+        project_group = model_traversal.get_project_group_of_assessment_category_id(id)
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
-        serializer = GradeCategorySerializer(data=request.data)
-        parent = GradeCategory.objects.filter(pk=id).first()
-        if not serializer.is_valid() or request.data["project_grade"] is False and parent.project_grade is True:
+        serializer = AssessmentCategorySerializer(data=request.data)
+        parent = AssessmentCategory.objects.filter(pk=id).first()
+        if not serializer.is_valid() or request.data["project_assessment"] is False and parent.project_assessment is True:
             return JsonResponse({"Error": "Invalid data"}, status=400)
-        if request.data["grade_type"] == "A":
+        if request.data["assessment_type"] == "A":
             if "automation_type" not in request.data.keys():
                 return JsonResponse({"Error": "Invalid data"}, status=400)
             if request.data["automation_type"] in "LT":
                 if "amount_needed" not in request.data.keys():
                     return JsonResponse({"Error": "Invalid data"}, status=400)
-        grade_category = serializer.save()
-        grade_category.parent_category = parent
-        grade_category.save()
-        grading_tree.add_grades_to_category(grade_category, project_group)
-        if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0 and not grading_tree.grade_category_has_milestone_parent(grade_category):
-            amount = model_traversal.get_amount_of_grademilestone_by_projectgroup(project_group)
-            GradeMilestone.objects.create(
+        assessment_category = serializer.save()
+        assessment_category.parent_category = parent
+        assessment_category.save()
+        assessment_tree.add_assessments_to_category(assessment_category, project_group)
+        if "start" in request.data.keys() and "end" in request.data.keys() and len(request.data["start"]) > 0 and len(request.data["end"]) > 0 and not assessment_tree.assessment_category_has_milestone_parent(assessment_category):
+            amount = model_traversal.get_amount_of_assessmentmilestone_by_projectgroup(project_group)
+            AssessmentMilestone.objects.create(
                 start=request.data["start"],
                 end=request.data["end"],
-                grade_category=grade_category,
+                assessment_category=assessment_category,
                 milestone_order_id=amount + 1
             )
-        if grade_category.grade_type == "A":
+        if assessment_category.assessment_type == "A":
             if request.data["automation_type"] in "LT":
-                AutomateGrade.objects.create(automation_type=request.data["automation_type"], amount_needed=request.data["amount_needed"], grade_category=grade_category)
+                AutomateAssessment.objects.create(automation_type=request.data["automation_type"], amount_needed=request.data["amount_needed"], assessment_category=assessment_category)
             elif request.data["automation_type"] == "R":
-                AutomateGrade.objects.create(automation_type=request.data["automation_type"], amount_needed=0, grade_category=grade_category)
-        grading_tree.recalculate_grade_category(grade_category)
-        return JsonResponse(GradeCategorySerializer(grade_category).data)
+                AutomateAssessment.objects.create(automation_type=request.data["automation_type"], amount_needed=0, assessment_category=assessment_category)
+        assessment_tree.recalculate_assessment_category(assessment_category)
+        return JsonResponse(AssessmentCategorySerializer(assessment_category).data)
 
     def delete(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        grade_category = GradeCategory.objects.filter(pk=id).first()
-        root = grade_category
+        assessment_category = AssessmentCategory.objects.filter(pk=id).first()
+        root = assessment_category
         while root.parent_category is not None:
             root = root.parent_category
-        project_group = root.grade_calculation.project_group
+        project_group = root.assessment_calculation.project_group
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         allowed_rights = ["O"]
         has_rights = user_project_groups.count() > 0 and user_project_groups.first().rights in allowed_rights
-        parent = grade_category.parent_category
+        parent = assessment_category.parent_category
         if has_rights:
             try:
-                target_milestone = grade_category.grademilestone
+                target_milestone = assessment_category.assessmentmilestone
             except ObjectDoesNotExist:
                 # Is not a milestone
-                grade_category.delete()
-                grading_tree.recalculate_grade_category(parent)
+                assessment_category.delete()
+                assessment_tree.recalculate_assessment_category(parent)
                 return JsonResponse({200: "OK"})
             else:
-                all_milestones = model_traversal.get_grade_milestones_by_projectgroup(project_group)
+                all_milestones = model_traversal.get_assessment_milestones_by_projectgroup(project_group)
                 for milestone in all_milestones:
                     if milestone.milestone_order_id > target_milestone.milestone_order_id:
                         milestone.milestone_order_id = milestone.milestone_order_id - 1
                         milestone.save()
                 target_milestone.delete()
-                grade_category.delete()
-                grading_tree.recalculate_grade_category(parent)
+                assessment_category.delete()
+                assessment_tree.recalculate_assessment_category(parent)
                 return JsonResponse({200: "OK"})
         return JsonResponse({4: 18})
 
     def put(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        project_group = model_traversal.get_project_group_of_grade_category_id(id)
+        project_group = model_traversal.get_project_group_of_assessment_category_id(id)
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
-        grade_category = GradeCategory.objects.filter(pk=id).first()
+        assessment_category = AssessmentCategory.objects.filter(pk=id).first()
         if "total" in request.data.keys():
-            grade_category.total = request.data["total"]
+            assessment_category.total = request.data["total"]
         if "description" in request.data.keys():
-            grade_category.description = request.data["description"]
+            assessment_category.description = request.data["description"]
         if "name" in request.data.keys():
-            grade_category.name = request.data["name"]
-        gm_query = GradeMilestone.objects.filter(grade_category=grade_category)
+            assessment_category.name = request.data["name"]
+        gm_query = AssessmentMilestone.objects.filter(assessment_category=assessment_category)
         if gm_query.count() > 0:
             gm = gm_query.first()
             if "start" in request.data.keys():
@@ -302,19 +303,19 @@ class AssessmentCategoryView(views.APIView):
             if "end" in request.data.keys():
                 gm.end = request.data["end"]
             gm.save()
-        grade_category.save()
-        return JsonResponse(GradeCategorySerializer(grade_category).data)
+        assessment_category.save()
+        return JsonResponse(AssessmentCategorySerializer(assessment_category).data)
 
 
 class AssessmentCategoryCopyView(views.APIView):
     def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        project_group = model_traversal.get_project_group_of_grade_category_id(id)
+        project_group = model_traversal.get_project_group_of_assessment_category_id(id)
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
-        grade_category = GradeCategory.objects.filter(pk=id).first()
-        grading_tree.generate_grade_category_copy(grade_category, grade_category.parent_category)
+        assessment_category = AssessmentCategory.objects.filter(pk=id).first()
+        assessment_tree.generate_assessment_category_copy(assessment_category, assessment_category.parent_category)
         return JsonResponse({})
 
 
@@ -328,9 +329,9 @@ class ProjectGroupAssessmentView(views.APIView):
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group)
         if user_project_groups.count() == 0:
             return JsonResponse({4: 18})
-        root_category = project_group.grade_calculation.grade_category
+        root_category = project_group.assessment_calculation.assessment_category
         print(root_category)
-        return JsonResponse(GradeCategorySerializer(root_category).data)
+        return JsonResponse(AssessmentCategorySerializer(root_category).data)
 
 
 class ProjectAssessmentsView(views.APIView):
@@ -340,25 +341,25 @@ class ProjectAssessmentsView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         user_project_groups = UserProjectGroup.objects.filter(account=request.user).filter(project_group=project.project_group)
         if user_project_groups.count() == 0:
-            # TODO: If user_projects has users, then the request came from student, he should see his own grades.
+            # TODO: If user_projects has users, then the request came from student, he should see his own assessments.
             return JsonResponse({4: 18})
 
         project_group = project.project_group
-        root_category = project_group.grade_calculation.grade_category
+        root_category = project_group.assessment_calculation.assessment_category
 
         users = [user_project.id for user_project in UserProject.objects.filter(project=project).all()]
-        return JsonResponse(GradeCategorySerializerWithGrades(root_category, context={"user_projects": users}).data)
+        return JsonResponse(AssessmentCategorySerializerWithAssessments(root_category, context={"user_projects": users}).data)
 
 
 class AssessUserView(views.APIView):
     def post(self, request, user_id, assessment_id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        project_group = model_traversal.get_project_group_of_grade_category_id(assessment_id)
+        project_group = model_traversal.get_project_group_of_assessment_category_id(assessment_id)
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
         print(f"Assessing user {user_id} and assessment {assessment_id} with data {request.data}")
-        grading_tree.grade(user_id, assessment_id, request.data["amount"])
+        assessment_tree.assessment(user_id, assessment_id, request.data["amount"])
         return JsonResponse({200: "OK"})
 
 
@@ -439,7 +440,7 @@ class ProjectMilestoneTimeSpentView(views.APIView):
         project = Project.objects.filter(pk=id).first()
         if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
-        milestone = model_traversal.get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
+        milestone = model_traversal.get_assessmentmilestone_by_projectgroup_and_milestone_order_number(project.project_group, milestone_id)
         if milestone is None:
             return JsonResponse({"status": 418, "error": f"Milestone {milestone_id} not found for project {id}."})
 
@@ -447,7 +448,7 @@ class ProjectMilestoneTimeSpentView(views.APIView):
 
         user_projects = UserProject.objects.filter(project=project).filter(disabled=False).all()
         for user_project in user_projects:
-            promised_json += TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=milestone).all()
+            promised_json += TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__assessment_milestone=milestone).all()
         return JsonResponse(custom_serializers.serialize_time_spent(promised_json), safe=False)
 
 
@@ -479,13 +480,13 @@ class BulkAssessView(views.APIView):
             return JsonResponse(constants.anonymous_json)
         checked = False
 
-        for sub_grade in request.data:
+        for sub_assessment in request.data:
             if not checked:
-                project_group = model_traversal.get_project_group_of_grade_category_id(sub_grade["grade_id"])
+                project_group = model_traversal.get_project_group_of_assessment_category_id(sub_assessment["assessment_id"])
                 if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
                     return JsonResponse(constants.no_access_json)
                 checked = True
-            grading_tree.grade(sub_grade["user_group_id"], sub_grade["grade_id"], sub_grade["points"])
+            assessment_tree.assessment(sub_assessment["user_group_id"], sub_assessment["assessment_id"], sub_assessment["points"])
         return JsonResponse({200: "OK"})
 
 
@@ -494,14 +495,14 @@ class FeedbackView(views.APIView):
     field_requirements = {
         "AP": [],
         "PA": ["project"],
-        "PM": ["project", "gradeMilestone"],
+        "PM": ["project", "assessmentMilestone"],
         "UA": ["userProject"],
-        "UM": ["userProject", "gradeMilestone"]
+        "UM": ["userProject", "assessmentMilestone"]
     }
 
     objects = {
         "project": Project.objects,
-        "gradeMilestone": GradeMilestone.objects,
+        "assessmentMilestone": AssessmentMilestone.objects,
         "userProject": UserProject.objects
     }
 
@@ -516,8 +517,8 @@ class FeedbackView(views.APIView):
                 return JsonResponse({"Error": "Incorrect fields"}, status=400)
             if req == "project":
                 feedbacks = feedbacks.filter(project=dat[req])
-            elif req == "gradeMilestone":
-                feedbacks = feedbacks.filter(grade_milestone=dat[req])
+            elif req == "assessmentMilestone":
+                feedbacks = feedbacks.filter(assessment_milestone=dat[req])
             elif req == "userProject":
                 feedbacks = feedbacks.filter(user=dat[req])
         return JsonResponse(FeedbackSerializer(feedbacks, many=True).data, safe=False)
@@ -536,11 +537,11 @@ class FeedbackView(views.APIView):
         for req in self.field_requirements[dat["type"]]:
             if req == "project":
                 feedback.project = Project.objects.filter(pk=dat[req]).first()
-            elif req == "gradeMilestone":
+            elif req == "assessmentMilestone":
                 project = Project.objects.filter(pk=dat["project"]).first() if "project" in dat.keys() else UserProject.objects.filter(pk=dat["userProject"]).first().project
-                feedback.grade_milestone = model_traversal.get_grademilestone_by_projectgroup_and_milestone_order_number(project.project_group, dat[req])
+                feedback.assessment_milestone = model_traversal.get_assessmentmilestone_by_projectgroup_and_milestone_order_number(project.project_group, dat[req])
             elif req == "userProject":
-                feedback.user = GradeMilestone.objects.filter(pk=dat[req]).first()
+                feedback.user = AssessmentMilestone.objects.filter(pk=dat[req]).first()
         feedback.save()
         return JsonResponse({})
 
@@ -553,9 +554,9 @@ class ProjectMilestoneConnectionsView(views.APIView):
         if not security.user_has_access_to_project(request.user, project):
             return JsonResponse(constants.no_access_json)
 
-        # Grade milestones
-        grade_milestones = model_traversal.get_grade_milestones_by_projectgroup(project.project_group)
-        gm_serializer = GradeMilestoneSerializer(grade_milestones, many=True)
+        # Assessment milestones
+        assessment_milestones = model_traversal.get_assessment_milestones_by_projectgroup(project.project_group)
+        gm_serializer = AssessmentMilestoneSerializer(assessment_milestones, many=True)
 
         # Repository milestones
         milestones = []
@@ -567,12 +568,12 @@ class ProjectMilestoneConnectionsView(views.APIView):
         m_serializer = MilestoneSerializer(milestones, many=True)
 
         return JsonResponse({
-            "grade_milestones": list(sorted(gm_serializer.data, key=lambda x: x["milestone_order_id"])),
+            "assessment_milestones": list(sorted(gm_serializer.data, key=lambda x: x["milestone_order_id"])),
             "milestones": m_serializer.data
         })
 
 
-class MilestoneSetGradeMilestoneView(views.APIView):
+class MilestoneSetAssessmentMilestoneView(views.APIView):
     def put(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -580,19 +581,19 @@ class MilestoneSetGradeMilestoneView(views.APIView):
         if not security.user_has_access_to_project(request.user, model_traversal.get_project_from_milestone(repo_milestone)):
             return JsonResponse(constants.no_access_json)
         if request.data["id"] != -1:
-            grade_milestone = GradeMilestone.objects.filter(pk=request.data["id"]).first()
+            assessment_milestone = AssessmentMilestone.objects.filter(pk=request.data["id"]).first()
         else:
-            grade_milestone = None
+            assessment_milestone = None
         # TODO: Check that connection is allowed
-        if grade_milestone is not None:
+        if assessment_milestone is not None:
             repo_milestone_project_group = model_traversal.get_project_from_milestone(repo_milestone).project_group
-            root_category = model_traversal.get_root_category(grade_milestone.grade_category)
-            grade_milestone_project_group = GradeCalculation.objects.filter(grade_category=root_category).first().project_group
-            if repo_milestone_project_group != grade_milestone_project_group:
-                print(f"Repository milestone {repo_milestone} and grade milestone {grade_milestone} do not have matching project groups.")
+            root_category = model_traversal.get_root_category(assessment_milestone.assessment_category)
+            assessment_milestone_project_group = AssessmentCalculation.objects.filter(assessment_category=root_category).first().project_group
+            if repo_milestone_project_group != assessment_milestone_project_group:
+                print(f"Repository milestone {repo_milestone} and assessment milestone {assessment_milestone} do not have matching project groups.")
                 return JsonResponse({418: "ERROR"})
 
-        repo_milestone.grade_milestone = grade_milestone
+        repo_milestone.assessment_milestone = assessment_milestone
         repo_milestone.save()
         return JsonResponse({200: "OK"})
 
@@ -635,11 +636,11 @@ class ProjectAddUserView(views.APIView):
 
 class AssessmentCategoryRecalculateView(views.APIView):
     def get(self, request, id):
-        grade_category = GradeCategory.objects.filter(pk=id).first()
-        project_group = model_traversal.get_root_category(grade_category).grade_calculation.project_group
+        assessment_category = AssessmentCategory.objects.filter(pk=id).first()
+        project_group = model_traversal.get_root_category(assessment_category).assessment_calculation.project_group
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse({}, status=401)
-        grading_tree.recalculate_grade_category(grade_category)
+        assessment_tree.recalculate_assessment_category(assessment_category)
         return JsonResponse({})
 
 
