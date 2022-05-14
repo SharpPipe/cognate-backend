@@ -77,7 +77,7 @@ CORS_ALLOWED_ORIGINS = (
     'http://35.228.100.147:8080',  # Kristjan's server
     'http://193.40.156.179:8080',  # Taltech server
     'http://193.40.156.142:8080',  # Taltech dev server,
-    'https://cs.ttu.ee/services/cognate/front'  # Live url
+    'https://cs.ttu.ee'  # Live url
 )
 
 ROOT_URLCONF = 'core.urls'
