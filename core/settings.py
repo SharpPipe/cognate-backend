@@ -54,7 +54,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
 
-    'django_extensions'
+    'django_extensions',
+    'sslserver'
 ]
 
 MIDDLEWARE = [
