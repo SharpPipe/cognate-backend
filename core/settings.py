@@ -26,6 +26,7 @@ SECRET_KEY = 'django-insecure-78yakj84ak&)td2282f!718w1!0^_w(^^v=l+4!8sxmzif)zro
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+SECURE_SSL_REDIRECT = True
 
 ALLOWED_HOSTS = [
     'localhost',
@@ -76,7 +77,7 @@ CORS_ALLOWED_ORIGINS = (
     'http://35.228.100.147:8080',  # Kristjan's server
     'http://193.40.156.179:8080',  # Taltech server
     'http://193.40.156.142:8080',  # Taltech dev server,
-    'https://cs.ttu.ee'  # Live url
+    'https://cs.ttu.ee/services/cognate/front'  # Live url
 )
 
 ROOT_URLCONF = 'core.urls'
