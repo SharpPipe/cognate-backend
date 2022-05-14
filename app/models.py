@@ -49,9 +49,9 @@ class Repository(models.Model):
 
 
 class UserProject(models.Model):
-    rights_hierarchy = ["V", "M", "E", "T", "A", "O"]  # Sorted from least to most
+    roles_hierarchy = ["V", "M", "E", "T", "A", "O"]  # Sorted from least to most
 
-    class Rights(models.TextChoices):
+    class Roles(models.TextChoices):
         # We should define some hierarchy of these roles
         OWNER = ("O", "Owner")
         ADMIN = ("A", "Admin")
@@ -60,7 +60,7 @@ class UserProject(models.Model):
         MEMBER = ("M", "Member")
         VIEWER = ("V", "Viewer")
 
-    rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
+    rights = models.CharField(max_length=1, choices=Roles.choices, default=Roles.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
     disabled = models.BooleanField(default=False)
@@ -73,41 +73,41 @@ class UserProject(models.Model):
 
 
 class UserProjectGroup(models.Model):
-    class Rights(models.TextChoices):
+    class Roles(models.TextChoices):
         OWNER = ("O", "Owner")
         ADMIN = ("A", "Admin")
         VIEWER = ("V", "Viewer")
 
-    rights = models.CharField(max_length=1, choices=Rights.choices, default=Rights.VIEWER)
+    rights = models.CharField(max_length=1, choices=Roles.choices, default=Roles.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE, related_name='user_project_groups')
 
 
-class GradeCategory(models.Model):
+class AssessmentCategory(models.Model):
 
-    GRADE_TYPE_FUNCS = {
+    ASSESSMENT_TYPE_FUNCS = {
         "S": sum,
         "M": max,
         "I": min
     }
 
-    class GradeType(models.TextChoices):
+    class AssessmentType(models.TextChoices):
         CUSTOM = ("C", "Custom")
-        SUM = ("S", "Sum")  # Grade is sum of children, then scaled using total
-        MAX = ("M", "Max")  # Grade is max of children, then scaled using total
-        MIN = ("I", "Min")  # Grade is max of children, then scaled using total
-        AUTOMATIC = ("A", "Automatic")  # Comes from script, also has an AutomateGrade object tied to it
+        SUM = ("S", "Sum")  # Assessment is sum of children, then scaled using total
+        MAX = ("M", "Max")  # Assessment is max of children, then scaled using total
+        MIN = ("I", "Min")  # Assessment is max of children, then scaled using total
+        AUTOMATIC = ("A", "Automatic")  # Comes from script, also has an AutomateAssessment object tied to it
 
     name = models.CharField(max_length=200, null=True, blank=True)
     total = models.DecimalField(max_digits=100, decimal_places=5, default=1.0)
-    grade_type = models.CharField(max_length=1, choices=GradeType.choices, default=GradeType.CUSTOM)
+    assessment_type = models.CharField(max_length=1, choices=AssessmentType.choices, default=AssessmentType.CUSTOM)
     description = models.TextField(null=True, blank=True)
-    project_grade = models.BooleanField(default=False)
+    project_assessment = models.BooleanField(default=False)
     parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
     # This SET_NULL is a lifesaver, NEVER change
 
 
-class AutomateGrade(models.Model):
+class AutomateAssessment(models.Model):
     class AutomationType(models.TextChoices):
         RANDOM = ("R", "Random")  # A random value between 0 and 1 is given
         TIME_SPENT = ("T", "Time spent")
@@ -115,18 +115,18 @@ class AutomateGrade(models.Model):
 
     automation_type = models.CharField(max_length=1, choices=AutomationType.choices, default=AutomationType.RANDOM)
     amount_needed = models.IntegerField()
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
+    assessment_category = models.ForeignKey(AssessmentCategory, on_delete=models.CASCADE)
 
 
-class GradeMilestone(models.Model):
+class AssessmentMilestone(models.Model):
     start = models.DateTimeField()
     end = models.DateTimeField()
     milestone_order_id = models.IntegerField()
-    grade_category = models.OneToOneField(GradeCategory, on_delete=models.CASCADE, null=True, blank=True, related_name="grade_milestone")
+    assessment_category = models.OneToOneField(AssessmentCategory, on_delete=models.CASCADE, null=True, blank=True, related_name="assessment_milestone")
 
 
 class Milestone(models.Model):
-    grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.SET_NULL, null=True, blank=True)
+    assessment_milestone = models.ForeignKey(AssessmentMilestone, on_delete=models.SET_NULL, null=True, blank=True)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name="milestones", null=True, blank=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="milestones", null=True, blank=True)
     title = models.TextField(null=True, blank=True)
@@ -166,45 +166,45 @@ class Commit(models.Model):
     counted_in_user_project_total = models.BooleanField(default=False)
 
 
-class GradeCalculation(models.Model):
-    grade_category = models.OneToOneField(GradeCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="grade_calculation")
-    project_group = models.OneToOneField(ProjectGroup, on_delete=models.CASCADE, related_name="grade_calculation")
+class AssessmentCalculation(models.Model):
+    assessment_category = models.OneToOneField(AssessmentCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="assessment_calculation")
+    project_group = models.OneToOneField(ProjectGroup, on_delete=models.CASCADE, related_name="assessment_calculation")
 
 
-class GradeInstanceType(models.TextChoices):
+class AssessmentInstanceType(models.TextChoices):
     PLACEHOLDER = ("P", "Placeholder")  # Initial value
     AUTOMATIC = ("A", "Automatic")  # Generated by our enterprise level AI
     MANUAL = ("M", "Manual")  # Set by the inferior mentors
 
 
-class UserGrade(models.Model):
-    grade_type = models.CharField(max_length=1, choices=GradeInstanceType.choices, default=GradeInstanceType.PLACEHOLDER)
+class UserAssessment(models.Model):
+    assessment_type = models.CharField(max_length=1, choices=AssessmentInstanceType.choices, default=AssessmentInstanceType.PLACEHOLDER)
     amount = models.DecimalField(max_digits=100, decimal_places=5)
     user_project = models.ForeignKey(UserProject, on_delete=models.CASCADE, null=True, blank=True)
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
+    assessment_category = models.ForeignKey(AssessmentCategory, on_delete=models.CASCADE)
 
 
-class ProjectGrade(models.Model):
-    grade_type = models.CharField(max_length=1, choices=GradeInstanceType.choices, default=GradeInstanceType.PLACEHOLDER)
+class ProjectAssessment(models.Model):
+    assessment_type = models.CharField(max_length=1, choices=AssessmentInstanceType.choices, default=AssessmentInstanceType.PLACEHOLDER)
     amount = models.DecimalField(max_digits=100, decimal_places=5)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
-    grade_category = models.ForeignKey(GradeCategory, on_delete=models.CASCADE)
+    assessment_category = models.ForeignKey(AssessmentCategory, on_delete=models.CASCADE)
 
 
 class Feedback(models.Model):
     class FeedbackType(models.TextChoices):
         APPLICATION = ("AP", "Application")              # Connections: None
         PROJECT = ("PA", "Project")                      # Connections: Project
-        PROJECT_MILESTONE = ("PM", "Project milestone")  # Connections: Project, GradeMilestone
+        PROJECT_MILESTONE = ("PM", "Project milestone")  # Connections: Project, AssessmentMilestone
         USER = ("UA", "User")                            # Connections: UserProject
-        USER_MILESTONE = ("UM", "User milestone")        # Connections: UserProject, GradeMilestone
+        USER_MILESTONE = ("UM", "User milestone")        # Connections: UserProject, AssessmentMilestone
 
     text = models.TextField(null=True, blank=True)
     type = models.CharField(max_length=2, choices=FeedbackType.choices)
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, null=True, blank=True, related_name="feedback")
     user = models.ForeignKey(UserProject, on_delete=models.CASCADE, null=True, blank=True, related_name="feedback")
-    grade_milestone = models.ForeignKey(GradeMilestone, on_delete=models.CASCADE, null=True, blank=True, related_name="feedback")
+    assessment_milestone = models.ForeignKey(AssessmentMilestone, on_delete=models.CASCADE, null=True, blank=True, related_name="feedback")
 
     commenter = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True)
     time = models.DateTimeField()
