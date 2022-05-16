@@ -282,7 +282,7 @@ def get_issue_data_for_user_in_milestone(user_project, assessment_milestone):
 
 
 def get_time_spent_for_user_in_milestone(user_project, assessment_milestone):
-    times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__grade_milestone=assessment_milestone).all()
+    times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__assessment_milestone=assessment_milestone).all()
     return sum([time_spend.amount for time_spend in times_spent if assessment_milestone.start <= time_spend.time <= assessment_milestone.end]) / 60
 
 
@@ -309,7 +309,7 @@ def generate_assessment_category_copy(assessment_category, parent):
         parent_category=parent
     )
     if new_category.assessment_type == "A":
-        old_automate_assessment = AutomateGrade.objects.filter(assessment_category=assessment_category).first()
+        old_automate_assessment = AutomateAssessment.objects.filter(assessment_category=assessment_category).first()
         AutomateAssessment.objects.create(
             automation_type=old_automate_assessment.automation_type,
             amount_needed=old_automate_assessment.amount_needed,
