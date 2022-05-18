@@ -180,9 +180,9 @@ def get_child_assessments(child_user_assessments):
 
 def recalculate_smi(assessment_category, children, child_user_assessments, user, query, assessment_give_function):
     func = AssessmentCategory.ASSESSMENT_TYPE_FUNCS[assessment_category.assessment_type]
-    total_potential = func([child.total for child in children])
+    total_potential = func([child.total for child in children]) if len(children) > 0 else 0
     child_assessments = get_child_assessments(child_user_assessments)
-    total_value = func(child_assessments)
+    total_value = func(child_assessments) if len(child_assessments) > 0 else 0
     amount = assessment_category.total * total_value / total_potential if total_potential != 0 else 0
     assessment_give_function(amount, assessment_category, user, query)
 
