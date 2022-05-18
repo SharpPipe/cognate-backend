@@ -222,14 +222,16 @@ class AssessmentCategoryView(views.APIView):
             return JsonResponse(constants.no_access_json)
         serializer = AssessmentCategorySerializer(data=request.data)
         parent = AssessmentCategory.objects.filter(pk=id).first()
-        if not serializer.is_valid() or request.data["project_assessment"] is False and parent.project_assessment is True:
-            return JsonResponse({"Error": "Invalid data"}, status=400)
+        if request.data["project_assessment"] is False and parent.project_assessment is True:
+            return JsonResponse({"Error": "Project assessment can't have non project assessment children."}, status=400)
+        if not serializer.is_valid():
+            return JsonResponse({"Error": "Invalid data in serializer."}, status=400)
         if request.data["assessment_type"] == "A":
             if "automation_type" not in request.data.keys():
-                return JsonResponse({"Error": "Invalid data"}, status=400)
+                return JsonResponse({"Error": "Assessment type is automatic, but missing automation_type field."}, status=400)
             if request.data["automation_type"] in "LT":
                 if "amount_needed" not in request.data.keys():
-                    return JsonResponse({"Error": "Invalid data"}, status=400)
+                    return JsonResponse({"Error": "Automation type needs amount, but no amount field given."}, status=400)
         assessment_category = serializer.save()
         assessment_category.parent_category = parent
         assessment_category.save()
