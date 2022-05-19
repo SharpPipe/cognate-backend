@@ -283,7 +283,8 @@ def get_issue_data_for_user_in_milestone(user_project, assessment_milestone):
 
 def get_time_spent_for_user_in_milestone(user_project, assessment_milestone):
     times_spent = TimeSpent.objects.filter(user=user_project.account).filter(issue__milestone__assessment_milestone=assessment_milestone).all()
-    return sum([time_spend.amount for time_spend in times_spent if assessment_milestone.start <= time_spend.time <= assessment_milestone.end]) / 60
+    # return sum([time_spend.amount for time_spend in times_spent if assessment_milestone.start <= time_spend.time <= assessment_milestone.end]) / 60
+    return sum([time_spend.amount for time_spend in times_spent]) / 60
 
 
 def get_lines_added_for_project_in_milestone(project, assessment_milestone):
