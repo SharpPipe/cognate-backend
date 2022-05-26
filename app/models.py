@@ -1,11 +1,17 @@
 import datetime
+import random
 
 from django.contrib.auth.models import User
 from django.db import models
 
 
+def identifier_generator():
+    return ''.join([random.choice("0123456789abcdef") for _ in range(32)])
+
+
 class Profile(models.Model):
     user = models.OneToOneField('auth.User', on_delete=models.CASCADE)
+    identifier = models.CharField(max_length=32, default=identifier_generator)
     gitlab_token = models.CharField(max_length=1000, null=True, blank=True)
     actual_account = models.BooleanField(default=True)
 
@@ -30,6 +36,11 @@ class ProjectGroup(models.Model):
 
     def __str__(self):
         return f"({self.pk}) - {self.name}"
+
+
+class ProjectGroupInvitation(models.Model):
+    identifier = models.CharField(max_length=32)
+    project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE, related_name="invitations")
 
 
 class Project(models.Model):
