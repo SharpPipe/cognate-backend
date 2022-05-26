@@ -204,6 +204,12 @@ class RepositoryView(views.APIView):
 
 
 class ProfileView(views.APIView):
+    def get(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        profile = Profile.objects.filter(user=request.user).first()
+        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier}))
+
     def put(self, request):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -764,3 +770,13 @@ class ManageGroupInvitationsView(views.APIView):
             return JsonResponse(constants.no_access_json)
         ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=request.data["identifier"]).delete()
         return JsonResponse(constants.successful_empty_json("Invitation successfully deleted"))
+
+
+class ProfileInvitationView(views.APIView):
+
+    def get(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        invitations = ProjectGroupInvitation.objects.filter(identifier=request.user.profile.identifier).all()
+        groups = [ProjectGroupSerializer(x.project_group).data for x in invitations]
+        return JsonResponse(constants.successful_data_json("Successfully got invitations for user.", {"invitations": groups}))
