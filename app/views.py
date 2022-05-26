@@ -755,3 +755,12 @@ class ManageGroupInvitationsView(views.APIView):
         identifier = request.data["identifier"]
         ProjectGroupInvitation.objects.create(project_group=project_group, identifier=identifier)
         return JsonResponse(constants.successful_empty_json("Invitation created successfully."))
+
+    def delete(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=request.data["identifier"]).delete()
+        return JsonResponse(constants.successful_empty_json("Invitation successfully deleted"))
