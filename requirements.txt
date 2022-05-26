@@ -8,3 +8,4 @@ django-extensions>=3.1.5
 requests>=2.27.1
 pyparsing>=3.0.7
 pydot>=1.4.2
+django-sslserver==0.22
