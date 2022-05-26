@@ -734,9 +734,19 @@ class AddNewRepo(views.APIView):
         })
 
 
-class InviteUserToGroupView(views.APIView):
+class ManageGroupInvitationsView(views.APIView):
+
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        invitations = ProjectGroupInvitation.objects.filter(project_group=project_group).all()
+        identifiers = [x.identifier for x in invitations]
+        return JsonResponse(constants.successful_data_json("Invitations fetched successfully", {"identifiers": identifiers}))
+
     def post(self, request, id):
-        print(request.user)
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
