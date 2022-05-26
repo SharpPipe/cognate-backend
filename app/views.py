@@ -11,7 +11,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, AssessmentCategory, \
     AssessmentCalculation, AssessmentMilestone, UserProject, UserAssessment, Milestone, TimeSpent, Feedback, Process, \
-    AutomateAssessment
+    AutomateAssessment, ProjectGroupInvitation
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, \
     AssessmentCategorySerializer, AssessmentCategorySerializerWithAssessments, MilestoneSerializer, \
@@ -732,3 +732,16 @@ class AddNewRepo(views.APIView):
             "id": process.pk,
             "hash": process.hash
         })
+
+
+class InviteUserToGroupView(views.APIView):
+    def post(self, request, id):
+        print(request.user)
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        identifier = request.data["identifier"]
+        ProjectGroupInvitation.objects.create(project_group=project_group, identifier=identifier)
+        return JsonResponse(constants.successful_empty_json("Invitation created successfully."))
