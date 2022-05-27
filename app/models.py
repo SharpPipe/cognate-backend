@@ -60,7 +60,7 @@ class Repository(models.Model):
 
 
 class UserProject(models.Model):
-    roles_hierarchy = ["V", "M", "E", "T", "A", "O"]  # Sorted from least to most
+    roles_hierarchy = ["B", "V", "M", "E", "T", "A", "O"]  # Sorted from least to most
 
     class Roles(models.TextChoices):
         # We should define some hierarchy of these roles
@@ -70,6 +70,7 @@ class UserProject(models.Model):
         MENTOR = ("E", "Mentor")
         MEMBER = ("M", "Member")
         VIEWER = ("V", "Viewer")
+        BLANK = ("B", "Blank")
 
     rights = models.CharField(max_length=1, choices=Roles.choices, default=Roles.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
@@ -88,6 +89,7 @@ class UserProjectGroup(models.Model):
         OWNER = ("O", "Owner")
         ADMIN = ("A", "Admin")
         VIEWER = ("V", "Viewer")
+        BLANK = ("B", "Blank")
 
     rights = models.CharField(max_length=1, choices=Roles.choices, default=Roles.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
