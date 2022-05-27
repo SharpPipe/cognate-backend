@@ -741,7 +741,6 @@ class AddNewRepo(views.APIView):
 
 
 class ManageGroupInvitationsView(views.APIView):
-
     def get(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
@@ -773,10 +772,22 @@ class ManageGroupInvitationsView(views.APIView):
 
 
 class ProfileInvitationView(views.APIView):
-
     def get(self, request):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         invitations = ProjectGroupInvitation.objects.filter(identifier=request.user.profile.identifier).all()
         groups = [ProjectGroupSerializer(x.project_group).data for x in invitations]
         return JsonResponse(constants.successful_data_json("Successfully got invitations for user.", {"invitations": groups}))
+
+
+class AcceptGroupInvitationView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        invitations = ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=request.user.profile.identifier)
+        if invitations.count() == 0:
+            return JsonResponse(constants.error_json("This user does not have invitation for that group."), status=403)
+        UserProjectGroup.objects.create(rights="B", account=request.user, project_group=project_group)
+        invitations.delete()
+        return JsonResponse(constants.successful_empty_json("Added user to project group"))

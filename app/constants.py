@@ -12,3 +12,10 @@ def successful_data_json(message, data):
         "message": message,
         "data": data
     }
+
+def error_json(message):
+    return {
+        "success": "false",
+        "message": message,
+        "data": {}
+    }

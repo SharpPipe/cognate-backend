@@ -7,7 +7,7 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     GroupSummaryMilestoneDataView, ProjectMilestoneConnectionsView, MilestoneSetAssessmentMilestoneView, TestLoginView, \
     ProcessInfoView, ProjectAddUserView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
     ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, AssessmentCategoryCopyView, \
-    ManageGroupInvitationsView, ProfileInvitationView
+    ManageGroupInvitationsView, ProfileInvitationView, AcceptGroupInvitationView
 
 router = routers.DefaultRouter()
 
@@ -18,6 +18,7 @@ urlpatterns = [
     path("groups/<int:id>/assessment/", ProjectGroupAssessmentView.as_view(), name="assessment_system"),
     path("groups/<int:id>/milestone/<int:milestone_id>/", GroupSummaryMilestoneDataView.as_view(), name="group_summary_project_milestone_data"),
     path("groups/<int:id>/invitations/", ManageGroupInvitationsView.as_view(), name="invite_user_to_project_group"),
+    path("groups/<int:id>/accept_invitation/", AcceptGroupInvitationView.as_view(), name="accept_group_invitation"),
 
     path("assessment_category/<int:id>/", AssessmentCategoryView.as_view(), name="assessment_categories"),
     path("assessment_category/<int:id>/copy/", AssessmentCategoryCopyView.as_view(), name="copy_assessment_category"),
