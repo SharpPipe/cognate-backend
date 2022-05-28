@@ -820,3 +820,17 @@ class ProjectGroupUsersView(views.APIView):
         by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
         return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
 
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        if not security.user_has_access_to_project_group_with_security_level_at_least(project_group, request.user, request.data["role"]):
+            return JsonResponse(constants.error_json("You are trying to assign a higher level role than you have yourself"))
+        target_account = User.objects.filter(pk=request.data["id"]).first()
+        current_roles = UserProjectGroup.objects.filter(project_group=project_group).filter(account=target_account)
+        if current_roles.count() == 0:
+            return JsonResponse(constants.error_json("Tou are trying to give a role to a user who is not in this project group."))
+        UserProjectGroup.objects.create(account=target_account, project_group=project_group, rights=request.data["role"])
+        return JsonResponse(constants.successful_empty_json("Successfully added user to new role"))
