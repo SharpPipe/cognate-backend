@@ -41,6 +41,7 @@ class ProjectGroup(models.Model):
 class ProjectGroupInvitation(models.Model):
     identifier = models.CharField(max_length=32)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE, related_name="invitations")
+    has_been_declined = models.BooleanField(null=True, blank=True)
 
 
 class Project(models.Model):
