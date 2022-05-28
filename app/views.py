@@ -758,6 +758,8 @@ class ManageGroupInvitationsView(views.APIView):
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
             return JsonResponse(constants.no_access_json)
         identifier = request.data["identifier"]
+        if ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=identifier).count() > 0:
+            return JsonResponse(constants.successful_empty_json("Invitation for that user already exists. Did not create a new one."))
         ProjectGroupInvitation.objects.create(project_group=project_group, identifier=identifier)
         return JsonResponse(constants.successful_empty_json("Invitation created successfully."))
 
@@ -775,7 +777,7 @@ class ProfileInvitationView(views.APIView):
     def get(self, request):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
-        invitations = ProjectGroupInvitation.objects.filter(identifier=request.user.profile.identifier).all()
+        invitations = ProjectGroupInvitation.objects.filter(identifier=request.user.profile.identifier).filter(has_been_declined=False).all()
         groups = [ProjectGroupSerializer(x.project_group).data for x in invitations]
         return JsonResponse(constants.successful_data_json("Successfully got invitations for user.", {"invitations": groups}))
 
@@ -788,6 +790,11 @@ class AcceptGroupInvitationView(views.APIView):
         invitations = ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=request.user.profile.identifier)
         if invitations.count() == 0:
             return JsonResponse(constants.error_json("This user does not have invitation for that group."), status=403)
-        UserProjectGroup.objects.create(rights="B", account=request.user, project_group=project_group)
-        invitations.delete()
-        return JsonResponse(constants.successful_empty_json("Added user to project group"))
+        if request.data["accept"]:
+            UserProjectGroup.objects.create(rights="B", account=request.user, project_group=project_group)
+            invitations.delete()
+            return JsonResponse(constants.successful_empty_json("Added user to project group"))
+        invitation = invitations.first()
+        invitation.has_been_declined = True
+        invitation.save()
+        return JsonResponse(constants.successful_empty_json("Successfully declined invitation"))
