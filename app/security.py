@@ -32,3 +32,10 @@ def user_has_access_to_project_group_with_security_level_at_least(project_group,
     target_index = UserProjectGroup.role_hierarchy.index(role)
     return max_index >= target_index
 
+
+def user_has_access_to_project_group_with_security_level_more_than(project_group, user, role):
+    user_roles = [x.rights for x in UserProjectGroup.objects.filter(project_group=project_group).filter(account=user).all()]
+    max_index = max([UserProjectGroup.role_hierarchy.index(x) for x in user_roles])
+    target_index = UserProjectGroup.role_hierarchy.index(role)
+    return max_index > target_index
+

@@ -834,3 +834,19 @@ class ProjectGroupUsersView(views.APIView):
             return JsonResponse(constants.error_json("Tou are trying to give a role to a user who is not in this project group."))
         UserProjectGroup.objects.create(account=target_account, project_group=project_group, rights=request.data["role"])
         return JsonResponse(constants.successful_empty_json("Successfully added user to new role"))
+
+    def delete(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if request.data["id"] == request.user.pk:
+            UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group).filter(rights=request.data["role"]).delete()
+            return JsonResponse(constants.successful_empty_json("Successfully removed role"))
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        if not security.user_has_access_to_project_group_with_security_level_more_than(project_group, request.user, request.data["role"]):
+            return JsonResponse(constants.error_json("You are trying to remove a role equal to or higher than yours"))
+        target_user = User.objects.filter(pk=request.data["id"]).first()
+        UserProjectGroup.objects.filter(account=target_user).filter(project_group=project_group).filter(rights=request.data["role"]).delete()
+        return JsonResponse(constants.successful_empty_json("Successfully removed role from user"))
+
