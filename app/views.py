@@ -850,3 +850,24 @@ class ProjectGroupUsersView(views.APIView):
         UserProjectGroup.objects.filter(account=target_user).filter(project_group=project_group).filter(rights=request.data["role"]).delete()
         return JsonResponse(constants.successful_empty_json("Successfully removed role from user"))
 
+
+class ProjectUsersView(views.APIView):
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_with_security_level(request.user, project, ["A", "O", "M", "T"]):
+            return JsonResponse(constants.no_access_json)
+        user_projects = UserProject.objects.filter(project=project).all()
+        by_user = {}
+        by_role = {role: [] for role in UserProject.role_hierarchy}
+        for user_project in user_projects:
+            account = user_project.account
+            by_role[user_project.rights].append({"username": account.username, "id": account.pk})
+            if (account.pk, account.username) not in by_user.keys():
+                by_user[(account.pk, account.username)] = []
+            by_user[(account.pk, account.username)].append(user_project.rights)
+        by_role = [{"role": role, "users": users} for role, users in by_role.items()]
+        by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
+        return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
+

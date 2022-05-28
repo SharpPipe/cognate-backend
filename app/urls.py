@@ -7,7 +7,8 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     GroupSummaryMilestoneDataView, ProjectMilestoneConnectionsView, MilestoneSetAssessmentMilestoneView, TestLoginView, \
     ProcessInfoView, ProjectAddUserView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
     ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, AssessmentCategoryCopyView, \
-    ManageGroupInvitationsView, ProfileInvitationView, AcceptGroupInvitationView, ProjectGroupUsersView
+    ManageGroupInvitationsView, ProfileInvitationView, AcceptGroupInvitationView, ProjectGroupUsersView, \
+    ProjectUsersView
 
 router = routers.DefaultRouter()
 
@@ -34,6 +35,7 @@ urlpatterns = [
     path("projects/<int:id>/time_spent/", ParametricTimeSpentView.as_view(), name="parametric_time_spent"),
 
     path("projects/<int:id>/change_dev_colour/", ChangeDevColourView.as_view(), name="change_dev_colour"),
+    path("projects/<int:id>/users/", ProjectUsersView.as_view(), name="project_users"),
     path("projects/<int:id>/add_user/", ProjectAddUserView.as_view(), name="add_user_to_project"),
     path("projects/<int:id>/repo/", AddNewRepo.as_view(), name="add_new_repo"),
     path("repos/<int:id>/project/", RepoSetProjectView.as_view(), name="set_project_for_repo"),

@@ -61,7 +61,7 @@ class Repository(models.Model):
 
 
 class UserProject(models.Model):
-    roles_hierarchy = ["B", "V", "M", "E", "T", "A", "O"]  # Sorted from least to most
+    role_hierarchy = ["B", "V", "M", "E", "T", "A", "O"]  # Sorted from least to most
 
     class Roles(models.TextChoices):
         # We should define some hierarchy of these roles
