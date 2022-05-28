@@ -7,12 +7,13 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     GroupSummaryMilestoneDataView, ProjectMilestoneConnectionsView, MilestoneSetAssessmentMilestoneView, TestLoginView, \
     ProcessInfoView, ProjectAddUserView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
     ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, AssessmentCategoryCopyView, \
-    ManageGroupInvitationsView, ProfileInvitationView, AcceptGroupInvitationView
+    ManageGroupInvitationsView, ProfileInvitationView, AcceptGroupInvitationView, ProjectGroupUsersView
 
 router = routers.DefaultRouter()
 
 urlpatterns = [
     path("groups/<int:id>/", ProjectsView.as_view(), name="projects"),
+    path("groups/<int:id>/users/", ProjectGroupUsersView.as_view(), name="project_group_users"),
     path("groups/<int:id>/project/", AddNewProject.as_view(), name="add_new_project"),
     path("groups/<int:id>/project_repo_connections/", ProjectRepoConnectionView.as_view(), name="project_repo_connections"),
     path("groups/<int:id>/assessment/", ProjectGroupAssessmentView.as_view(), name="assessment_system"),

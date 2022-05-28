@@ -798,3 +798,25 @@ class AcceptGroupInvitationView(views.APIView):
         invitation.has_been_declined = True
         invitation.save()
         return JsonResponse(constants.successful_empty_json("Successfully declined invitation"))
+
+
+class ProjectGroupUsersView(views.APIView):
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        user_project_groups = UserProjectGroup.objects.filter(project_group=project_group).all()
+        by_user = {}
+        by_role = {role: [] for role in UserProjectGroup.role_hierarchy}
+        for user_project_group in user_project_groups:
+            account = user_project_group.account
+            by_role[user_project_group.rights].append({"username": account.username, "id": account.pk})
+            if (account.pk, account.username) not in by_user.keys():
+                by_user[(account.pk, account.username)] = []
+            by_user[(account.pk, account.username)].append(user_project_group.rights)
+        by_role = [{"role": role, "users": users} for role, users in by_role.items()]
+        by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
+        return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
+

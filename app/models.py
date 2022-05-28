@@ -86,6 +86,8 @@ class UserProject(models.Model):
 
 
 class UserProjectGroup(models.Model):
+    role_hierarchy = ["B", "V", "A", "O"]
+
     class Roles(models.TextChoices):
         OWNER = ("O", "Owner")
         ADMIN = ("A", "Admin")
