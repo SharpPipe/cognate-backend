@@ -5,7 +5,7 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     AssessmentCategoryView, ProjectGroupAssessmentView, ProjectAssessmentsView, AssessUserView, RepositoryUpdateView, \
     ProjectGroupUpdateView, ProjectMilestoneDataView, ProjectMilestoneTimeSpentView, BulkAssessView, FeedbackView, \
     GroupSummaryMilestoneDataView, ProjectMilestoneConnectionsView, MilestoneSetAssessmentMilestoneView, TestLoginView, \
-    ProcessInfoView, ProjectAddUserView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
+    ProcessInfoView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
     ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, AssessmentCategoryCopyView, \
     ManageGroupInvitationsView, ProfileInvitationView, AcceptGroupInvitationView, ProjectGroupUsersView, \
     ProjectUsersView
@@ -36,7 +36,6 @@ urlpatterns = [
 
     path("projects/<int:id>/change_dev_colour/", ChangeDevColourView.as_view(), name="change_dev_colour"),
     path("projects/<int:id>/users/", ProjectUsersView.as_view(), name="project_users"),
-    path("projects/<int:id>/add_user/", ProjectAddUserView.as_view(), name="add_user_to_project"),
     path("projects/<int:id>/repo/", AddNewRepo.as_view(), name="add_new_repo"),
     path("repos/<int:id>/project/", RepoSetProjectView.as_view(), name="set_project_for_repo"),
     path("projects/<int:id>/milestone_connections/", ProjectMilestoneConnectionsView.as_view(), name="project_milestone_connections"),

@@ -623,25 +623,6 @@ class ProcessInfoView(views.APIView):
         return JsonResponse({"process": ProcessSerializer(processes.first()).data})
 
 
-class ProjectAddUserView(views.APIView):
-    def post(self, request, id):
-        if request.user.is_anonymous:
-            return JsonResponse({}, status=401)
-        project = Project.objects.filter(pk=id).first()
-        project_group = project.project_group
-        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
-        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
-        all_rights = list(user_roles_project) + list(user_roles_project_group)
-        max_rights = max([UserProject.rights_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
-        target_rights = UserProject.rights_hierarchy.index(request.data["rights"])
-        if target_rights >= max_rights:
-            return JsonResponse({}, status=401)
-        user = User.objects.filter(pk=request.data["user"]).first()
-        disabled = request.data["rights"] != "M"
-        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled, colour=helpers.random_colour())
-        return JsonResponse({})
-
-
 class AssessmentCategoryRecalculateView(views.APIView):
     def get(self, request, id):
         assessment_category = AssessmentCategory.objects.filter(pk=id).first()
@@ -870,4 +851,44 @@ class ProjectUsersView(views.APIView):
         by_role = [{"role": role, "users": users} for role, users in by_role.items()]
         by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
         return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
+
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        project_group = project.project_group
+        user = User.objects.filter(pk=request.data["id"]).first()
+        if UserProjectGroup.objects.filter(account=user).filter(project_group=project_group).count() == 0:
+            return JsonResponse(constants.error_json("That user is not in the correct project group"))
+        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
+        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
+        all_rights = list(user_roles_project) + list(user_roles_project_group)
+        max_rights = max([UserProject.role_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
+        target_rights = UserProject.role_hierarchy.index(request.data["rights"])
+        if target_rights > max_rights:
+            return JsonResponse(constants.error_json("You do not have a high enough role to assign that role"))
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, colour=helpers.random_colour())
+        return JsonResponse(constants.successful_empty_json("Successfully added user to project"))
+
+    def delete(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        if request.data["id"] == request.user.pk:
+            UserProject.objects.filter(account=request.user).filter(project=project).filter(rights=request.data["role"]).delete()
+            return JsonResponse(constants.successful_empty_json("Successfully removed role"))
+        if not security.user_has_access_to_project_with_security_level(request.user, project, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+
+        project_group = project.project_group
+        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
+        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
+        all_rights = list(user_roles_project) + list(user_roles_project_group)
+        max_rights = max([UserProject.role_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
+        target_rights = UserProject.role_hierarchy.index(request.data["rights"])
+        if target_rights >= max_rights:
+            return JsonResponse(constants.error_json("You do not have a high enough role to remove that role"))
+        user = User.objects.filter(pk=request.data["id"]).first()
+        UserProject.objects.filter(project=project).filter(account=user).delete()
+        return JsonResponse(constants.successful_empty_json("Successfully removed user to project"))
 
