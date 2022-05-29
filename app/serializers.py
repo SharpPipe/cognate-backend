@@ -30,7 +30,7 @@ class RepositorySerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ['id', 'user_id', 'gitlab_token', 'actual_account']
+        fields = ['id', 'user_id', 'gitlab_token', 'identifier', 'actual_account']
         read_only_fields = ['user_id']
 
 

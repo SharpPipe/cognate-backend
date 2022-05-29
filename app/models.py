@@ -1,11 +1,17 @@
 import datetime
+import random
 
 from django.contrib.auth.models import User
 from django.db import models
 
 
+def identifier_generator():
+    return ''.join([random.choice("0123456789abcdef") for _ in range(32)])
+
+
 class Profile(models.Model):
     user = models.OneToOneField('auth.User', on_delete=models.CASCADE)
+    identifier = models.CharField(max_length=32, default=identifier_generator)
     gitlab_token = models.CharField(max_length=1000, null=True, blank=True)
     actual_account = models.BooleanField(default=True)
 
@@ -32,6 +38,12 @@ class ProjectGroup(models.Model):
         return f"({self.pk}) - {self.name}"
 
 
+class ProjectGroupInvitation(models.Model):
+    identifier = models.CharField(max_length=32)
+    project_group = models.ForeignKey(ProjectGroup, on_delete=models.CASCADE, related_name="invitations")
+    has_been_declined = models.BooleanField(default=False)
+
+
 class Project(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
     project_group = models.ForeignKey(ProjectGroup, on_delete=models.SET_NULL, null=True, blank=True)
@@ -49,7 +61,7 @@ class Repository(models.Model):
 
 
 class UserProject(models.Model):
-    roles_hierarchy = ["V", "M", "E", "T", "A", "O"]  # Sorted from least to most
+    role_hierarchy = ["B", "V", "M", "E", "T", "A", "O"]  # Sorted from least to most
 
     class Roles(models.TextChoices):
         # We should define some hierarchy of these roles
@@ -59,6 +71,7 @@ class UserProject(models.Model):
         MENTOR = ("E", "Mentor")
         MEMBER = ("M", "Member")
         VIEWER = ("V", "Viewer")
+        BLANK = ("B", "Blank")
 
     rights = models.CharField(max_length=1, choices=Roles.choices, default=Roles.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
@@ -73,10 +86,13 @@ class UserProject(models.Model):
 
 
 class UserProjectGroup(models.Model):
+    role_hierarchy = ["B", "V", "A", "O"]
+
     class Roles(models.TextChoices):
         OWNER = ("O", "Owner")
         ADMIN = ("A", "Admin")
         VIEWER = ("V", "Viewer")
+        BLANK = ("B", "Blank")
 
     rights = models.CharField(max_length=1, choices=Roles.choices, default=Roles.VIEWER)
     account = models.ForeignKey('auth.User', on_delete=models.CASCADE)
