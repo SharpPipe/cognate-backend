@@ -208,7 +208,7 @@ class ProfileView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
-        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier}))
+        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier, "id": profile.pk}))
 
     def put(self, request):
         if request.user.is_anonymous:
@@ -377,17 +377,22 @@ class RepositoryUpdateView(views.APIView):
             return JsonResponse(constants.anonymous_json)
         if not security.user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):
             return JsonResponse(constants.no_access_json)
-        repo = gitlab_helper.update_repository(id, request.user, [])
+        user_token = security.get_user_token(request.user, request.data["password"])
+        repo = gitlab_helper.update_repository(id, request.user, [], user_token)
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
 
 
 class ProjectGroupUpdateView(views.APIView):
-    def get(self, request, id):
+    def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
+        user_token = None
+        if "password" in request.data:
+            security.encrypt_token(request.user, request.data["password"])
+            user_token = security.get_user_token(request.user, request.data["password"])
         name = "project group update"
         hid = hashlib.sha256()
         [hid.update(str(x).encode()) for x in [name, id]]
@@ -403,7 +408,7 @@ class ProjectGroupUpdateView(views.APIView):
         [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
         process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SG", status="O", completion_percentage=0)
         process.save()
-        t = threading.Thread(target=gitlab_helper.update_all_repos_in_group, args=[project_group, request.user, process], daemon=True)
+        t = threading.Thread(target=gitlab_helper.update_all_repos_in_group, args=[project_group, request.user, process, user_token], daemon=True)
         t.start()
         return JsonResponse({
             "id": process.pk,
@@ -713,7 +718,9 @@ class AddNewRepo(views.APIView):
         [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
         process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SR", status="O", completion_percentage=0)
 
-        t = threading.Thread(target=gitlab_helper.update_repository, args=[repo.pk, request.user, [], process], daemon=True)
+        user_token = security.get_user_token(request.user, request.data["password"])
+
+        t = threading.Thread(target=gitlab_helper.update_repository, args=[repo.pk, request.user, [], user_token, process], daemon=True)
         t.start()
         return JsonResponse({
             "id": process.pk,
