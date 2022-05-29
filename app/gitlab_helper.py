@@ -12,17 +12,17 @@ from . import assessment_tree
 from . import helpers
 
 
-def get_token(repo, user):
+def get_token(repo, user, user_token):
     if repo.project.project_group.gitlab_token is not None:
         return repo.project.project_group.gitlab_token
-    return user.profile.gitlab_token
+    return user_token
 
 
-def get_members_from_repo(repo, user, get_all):
+def get_members_from_repo(repo, user, get_all, user_token):
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
     endpoint_part = f"/projects/{repo.gitlab_id}/members" + ("/all" if get_all else "")
-    token_part = f"?private_token={get_token(repo, user)}"
+    token_part = f"?private_token={get_token(repo, user, user_token)}"
     print(token_part)
     answer = requests.get(base_url + api_part + endpoint_part + token_part)
     return answer.json()
@@ -93,7 +93,7 @@ def is_time_spent_message(message):
     return True, sum(parts)
 
 
-def update_all_repos_in_group(project_group, user, process):
+def update_all_repos_in_group(project_group, user, process, user_token):
     print(f"Starting process with hash {process.hash}")
     repos = []
     new_users = []
@@ -101,7 +101,7 @@ def update_all_repos_in_group(project_group, user, process):
         for repository in project.repository_set.all():
             repos.append(repository.pk)
     for i, repo in enumerate(repos):
-        update_repository(repo, user, new_users)
+        update_repository(repo, user, new_users, user_token)
         process.completion_percentage = 100 * (i + 1) / len(repos)
         process.save()
         print(f"{100 * (i + 1) / len(repos)}% done refreshing repos")
@@ -121,19 +121,19 @@ def update_process(process, done, total, data=""):
     process.save()
 
 
-def update_repository(id, user, new_users, process=None):
+def update_repository(id, user, new_users, user_token, process=None):
     repo = Repository.objects.filter(pk=id).first()
     project = repo.project
     assessment_category_root = project.project_group.assessment_calculation.assessment_category
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
-    token_part = f"?private_token={get_token(repo, user)}&per_page=100"
+    token_part = f"?private_token={get_token(repo, user, user_token)}&per_page=100"
 
     times = []
 
     # Refresh users
     times.append(time.time())  # 0
-    answer_json = get_members_from_repo(repo, user, False)
+    answer_json = get_members_from_repo(repo, user, False, user_token)
     if process is not None: update_process(process, 1, 10)
     user_objects = []
     if not isinstance(answer_json, list):

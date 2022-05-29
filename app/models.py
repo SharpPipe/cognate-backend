@@ -14,6 +14,8 @@ class Profile(models.Model):
     identifier = models.CharField(max_length=32, default=identifier_generator)
     gitlab_token = models.CharField(max_length=1000, null=True, blank=True)
     actual_account = models.BooleanField(default=True)
+    gitlab_token_encrypted = models.BooleanField(default=False)
+    gitlab_token_salt = models.CharField(max_length=1000, null=True, blank=True)
 
 
 class Committer(models.Model):
