@@ -216,6 +216,8 @@ class ProfileView(views.APIView):
         profile = Profile.objects.filter(user=request.user).first()
         profile.gitlab_token = request.data["gitlab_token"]
         profile.save()
+        if "password" in request.data.keys():
+            security.encrypt_token(request.user, request.data["password"])
         return JsonResponse({})
 
 
