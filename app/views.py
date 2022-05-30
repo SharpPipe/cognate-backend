@@ -114,6 +114,7 @@ class ProjectsView(views.APIView):
         rights = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=group).all()]
         base_assessment_filter = UserAssessment.objects.filter(assessment_category=root_category)
         assessment_milestones = [x for x in model_traversal.get_assessment_milestones_by_projectgroup(group)]
+        json_warnings = []
         for project in projects:
             dat = ProjectSerializer(project).data
 
@@ -121,10 +122,12 @@ class ProjectsView(views.APIView):
             dat["mentors"] = [x.account.username for x in project.userproject_set.filter(rights="E").all()]
 
             devs = []
-            for dev in project.userproject_set.filter(disabled=False).all():
+            for dev in project.userproject_set.filter(disabled=False).filter(rights="M").all():
                 dev_data = {}
                 assessment_object = base_assessment_filter.filter(user_project=dev).first()
-                dev_data["points"] = assessment_object.amount
+                if assessment_object is None:
+                    json_warnings.append(f"Developer {dev} does not seem to have an assessment object.")
+                dev_data["points"] = assessment_object.amount if assessment_object is not None else -1
                 dev_data["name"] = dev.account.username
                 dev_data["colour"] = dev.colour
                 devs.append(dev_data)
@@ -134,7 +137,7 @@ class ProjectsView(views.APIView):
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
-        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(assessment_milestones), "total_milestones": 7}, safe=False)
+        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(assessment_milestones), "total_milestones": 7, "warnings": json_warnings}, safe=False)
 
     def put(self, request, id):
         if request.user.is_anonymous:
