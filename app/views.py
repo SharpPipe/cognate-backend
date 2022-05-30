@@ -213,13 +213,16 @@ class ProfileView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
-        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier, "id": profile.pk}))
+        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier, "id": profile.pk, "store_password": profile.store_passwords_in_local_storage}))
 
     def put(self, request):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
-        profile.gitlab_token = request.data["gitlab_token"]
+        if "gitlab_token" in request.data.keys():
+            profile.gitlab_token = request.data["gitlab_token"]
+        if "store_password" in request.data.keys():
+            profile.store_passwords_in_local_storage = request.data["store_password"]
         profile.save()
         if "password" in request.data.keys():
             security.encrypt_token(request.user, request.data["password"])
