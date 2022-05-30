@@ -1,4 +1,3 @@
-import time
 
 from .models import Project, UserProject, AssessmentCategory, UserAssessment, ProjectAssessment, Feedback
 

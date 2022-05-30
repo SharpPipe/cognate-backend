@@ -16,6 +16,7 @@ class Profile(models.Model):
     actual_account = models.BooleanField(default=True)
     gitlab_token_encrypted = models.BooleanField(default=False)
     gitlab_token_salt = models.CharField(max_length=1000, null=True, blank=True)
+    store_passwords_in_local_storage = models.BooleanField(default=False)
 
 
 class Committer(models.Model):

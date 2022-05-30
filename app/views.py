@@ -213,13 +213,16 @@ class ProfileView(views.APIView):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
-        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier, "id": profile.pk}))
+        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier, "id": profile.pk, "store_password": profile.store_passwords_in_local_storage}))
 
     def put(self, request):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
-        profile.gitlab_token = request.data["gitlab_token"]
+        if "gitlab_token" in request.data.keys():
+            profile.gitlab_token = request.data["gitlab_token"]
+        if "store_password" in request.data.keys():
+            profile.store_passwords_in_local_storage = request.data["store_password"]
         profile.save()
         if "password" in request.data.keys():
             security.encrypt_token(request.user, request.data["password"])
@@ -858,10 +861,10 @@ class ProjectUsersView(views.APIView):
         by_role = {role: [] for role in UserProject.role_hierarchy}
         for user_project in user_projects:
             account = user_project.account
-            by_role[user_project.rights].append({"username": account.username, "id": account.pk})
+            by_role[user_project.rights].append({"username": account.username, "id": account.pk, "colour": user_project.colour})
             if (account.pk, account.username) not in by_user.keys():
                 by_user[(account.pk, account.username)] = []
-            by_user[(account.pk, account.username)].append(user_project.rights)
+            by_user[(account.pk, account.username)].append({"role": user_project.rights, "colour": user_project.colour})
         by_role = [{"role": role, "users": users} for role, users in by_role.items()]
         by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
         return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
