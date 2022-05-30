@@ -1,3 +1,5 @@
+import csv
+
 import requests
 import hashlib
 import time
@@ -5,13 +7,13 @@ import threading
 import datetime
 
 from rest_framework import views
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, AssessmentCategory, \
     AssessmentCalculation, AssessmentMilestone, UserProject, UserAssessment, Milestone, TimeSpent, Feedback, Process, \
-    AutomateAssessment, ProjectGroupInvitation
+    AutomateAssessment, ProjectGroupInvitation, ProjectAssessment
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, \
     AssessmentCategorySerializer, AssessmentCategorySerializerWithAssessments, MilestoneSerializer, \
@@ -904,3 +906,42 @@ class ProjectUsersView(views.APIView):
         UserProject.objects.filter(project=project).filter(account=user).delete()
         return JsonResponse(constants.successful_empty_json("Successfully removed user to project"))
 
+
+class AssessmentCsvView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        assessments = []
+        for assessment_id in request.data["assessments"]:
+            assessment_category = AssessmentCategory.objects.filter(pk=assessment_id).first()
+            if assessment_category is None:
+                return JsonResponse(constants.error_json(f"Assessment category with id {assessment_id} not found from this project group."))
+            assessment_group = model_traversal.get_project_group_of_assessment_category(assessment_category)
+            if group != assessment_group:
+                return JsonResponse(constants.error_json(f"Assessment category with id {assessment_id} not found from this project group."))
+            assessments.append(assessment_category)
+        response = HttpResponse(
+            content_type='text/csv',
+            headers={'Content-Disposition': 'attachment; filename="assessment_data.csv"'},
+        )
+        writer = csv.writer(response)
+        writer.writerow(["project", "developer"] + [str(x.pk) + ": " + x.name for x in assessments])
+        for project in Project.objects.filter(project_group=group).all():
+            for developer in UserProject.objects.filter(project=project).filter(disabled=False).filter(rights="M").all():
+                row = [project.name, developer.account.username]
+                for assessment in assessments:
+                    if assessment.project_assessment:
+                        assessment_instances = ProjectAssessment.objects.filter(project=project).filter(assessment_category=assessment).all()
+                    else:
+                        assessment_instances = UserAssessment.objects.filter(user_project=developer).filter(assessment_category=assessment).all()
+                    assessment_types = [x.assessment_type for x in assessment_instances]
+                    indexes = [UserAssessment.assessment_instance_hierarchy.index(x) for x in assessment_types]
+                    target_index = indexes.index(max(indexes))
+                    highest_priority_assessment = assessment_instances[target_index]
+                    row.append(highest_priority_assessment.amount)
+                    # print(f"Options were {assessment_types} and chose {highest_priority_assessment.assessment_type}")
+                writer.writerow([str(x) for x in row])
+        return response

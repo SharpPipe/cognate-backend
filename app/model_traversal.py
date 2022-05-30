@@ -48,9 +48,13 @@ def get_assessmentmilestone_by_projectgroup_and_milestone_order_number(project_g
             return test_milestone
 
 
-def get_project_group_of_assessment_category_id(assessment_id):
-    root_category = get_root_category(AssessmentCategory.objects.filter(id=assessment_id).first())
+def get_project_group_of_assessment_category(assessment_category):
+    root_category = get_root_category(assessment_category)
     return root_category.assessment_calculation.project_group
+
+
+def get_project_group_of_assessment_category_id(assessment_id):
+    return get_project_group_of_assessment_category(AssessmentCategory.objects.filter(id=assessment_id).first())
 
 
 def get_root_category(category):
