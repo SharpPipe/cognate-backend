@@ -196,6 +196,8 @@ class AssessmentInstanceType(models.TextChoices):
 
 
 class UserAssessment(models.Model):
+    assessment_instance_hierarchy = ["P", "A", "M"]
+
     assessment_type = models.CharField(max_length=1, choices=AssessmentInstanceType.choices, default=AssessmentInstanceType.PLACEHOLDER)
     amount = models.DecimalField(max_digits=100, decimal_places=5)
     user_project = models.ForeignKey(UserProject, on_delete=models.CASCADE, null=True, blank=True)
