@@ -3,7 +3,6 @@
 import random
 
 from django.db import migrations
-from app.models import Profile
 
 
 def random_hex():
@@ -11,9 +10,14 @@ def random_hex():
 
 
 def generate_new_random_identifiers(apps, schema_editor):
+    Profile = apps.get_model('app', 'Profile')
     for profile in Profile.objects.all():
         profile.identifier = random_hex()
         profile.save()
+
+
+def unset_random_identifiers(apps, schema_editor):
+    pass  # Don't need special logic for reversing this
 
 
 class Migration(migrations.Migration):
@@ -23,5 +27,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(generate_new_random_identifiers),
+        migrations.RunPython(generate_new_random_identifiers, unset_random_identifiers),
     ]
