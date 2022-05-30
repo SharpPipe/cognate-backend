@@ -1,3 +1,5 @@
+import csv
+
 import requests
 import hashlib
 import time
@@ -5,13 +7,13 @@ import threading
 import datetime
 
 from rest_framework import views
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 
 from .models import ProjectGroup, UserProjectGroup, Profile, Project, Repository, AssessmentCategory, \
     AssessmentCalculation, AssessmentMilestone, UserProject, UserAssessment, Milestone, TimeSpent, Feedback, Process, \
-    AutomateAssessment
+    AutomateAssessment, ProjectGroupInvitation, ProjectAssessment
 
 from .serializers import ProjectGroupSerializer, ProjectSerializer, RepositorySerializer, \
     AssessmentCategorySerializer, AssessmentCategorySerializerWithAssessments, MilestoneSerializer, \
@@ -114,6 +116,7 @@ class ProjectsView(views.APIView):
         rights = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=group).all()]
         base_assessment_filter = UserAssessment.objects.filter(assessment_category=root_category)
         assessment_milestones = [x for x in model_traversal.get_assessment_milestones_by_projectgroup(group)]
+        json_warnings = []
         for project in projects:
             dat = ProjectSerializer(project).data
 
@@ -121,10 +124,12 @@ class ProjectsView(views.APIView):
             dat["mentors"] = [x.account.username for x in project.userproject_set.filter(rights="E").all()]
 
             devs = []
-            for dev in project.userproject_set.filter(disabled=False).all():
+            for dev in project.userproject_set.filter(disabled=False).filter(rights="M").all():
                 dev_data = {}
                 assessment_object = base_assessment_filter.filter(user_project=dev).first()
-                dev_data["points"] = assessment_object.amount
+                if assessment_object is None:
+                    json_warnings.append(f"Developer {dev} does not seem to have an assessment object.")
+                dev_data["points"] = assessment_object.amount if assessment_object is not None else -1
                 dev_data["name"] = dev.account.username
                 dev_data["colour"] = dev.colour
                 devs.append(dev_data)
@@ -134,7 +139,7 @@ class ProjectsView(views.APIView):
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
-        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(assessment_milestones), "total_milestones": 7}, safe=False)
+        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(assessment_milestones), "total_milestones": 7, "warnings": json_warnings}, safe=False)
 
     def put(self, request, id):
         if request.user.is_anonymous:
@@ -204,12 +209,20 @@ class RepositoryView(views.APIView):
 
 
 class ProfileView(views.APIView):
+    def get(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        profile = Profile.objects.filter(user=request.user).first()
+        return JsonResponse(constants.successful_data_json("Successfully got profile.", {"identifier": profile.identifier, "id": profile.pk}))
+
     def put(self, request):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         profile = Profile.objects.filter(user=request.user).first()
         profile.gitlab_token = request.data["gitlab_token"]
         profile.save()
+        if "password" in request.data.keys():
+            security.encrypt_token(request.user, request.data["password"])
         return JsonResponse({})
 
 
@@ -371,17 +384,22 @@ class RepositoryUpdateView(views.APIView):
             return JsonResponse(constants.anonymous_json)
         if not security.user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):
             return JsonResponse(constants.no_access_json)
-        repo = gitlab_helper.update_repository(id, request.user, [])
+        user_token = security.get_user_token(request.user, request.data["password"])
+        repo = gitlab_helper.update_repository(id, request.user, [], user_token)
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
 
 
 class ProjectGroupUpdateView(views.APIView):
-    def get(self, request, id):
+    def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         project_group = ProjectGroup.objects.filter(pk=id).first()
         if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["A", "O"]):
             return JsonResponse(constants.no_access_json)
+        user_token = None
+        if "password" in request.data:
+            security.encrypt_token(request.user, request.data["password"])
+            user_token = security.get_user_token(request.user, request.data["password"])
         name = "project group update"
         hid = hashlib.sha256()
         [hid.update(str(x).encode()) for x in [name, id]]
@@ -397,7 +415,7 @@ class ProjectGroupUpdateView(views.APIView):
         [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
         process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SG", status="O", completion_percentage=0)
         process.save()
-        t = threading.Thread(target=gitlab_helper.update_all_repos_in_group, args=[project_group, request.user, process], daemon=True)
+        t = threading.Thread(target=gitlab_helper.update_all_repos_in_group, args=[project_group, request.user, process, user_token], daemon=True)
         t.start()
         return JsonResponse({
             "id": process.pk,
@@ -617,25 +635,6 @@ class ProcessInfoView(views.APIView):
         return JsonResponse({"process": ProcessSerializer(processes.first()).data})
 
 
-class ProjectAddUserView(views.APIView):
-    def post(self, request, id):
-        if request.user.is_anonymous:
-            return JsonResponse({}, status=401)
-        project = Project.objects.filter(pk=id).first()
-        project_group = project.project_group
-        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
-        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
-        all_rights = list(user_roles_project) + list(user_roles_project_group)
-        max_rights = max([UserProject.rights_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
-        target_rights = UserProject.rights_hierarchy.index(request.data["rights"])
-        if target_rights >= max_rights:
-            return JsonResponse({}, status=401)
-        user = User.objects.filter(pk=request.data["user"]).first()
-        disabled = request.data["rights"] != "M"
-        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, disabled=disabled, colour=helpers.random_colour())
-        return JsonResponse({})
-
-
 class AssessmentCategoryRecalculateView(views.APIView):
     def get(self, request, id):
         assessment_category = AssessmentCategory.objects.filter(pk=id).first()
@@ -726,9 +725,223 @@ class AddNewRepo(views.APIView):
         [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
         process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SR", status="O", completion_percentage=0)
 
-        t = threading.Thread(target=gitlab_helper.update_repository, args=[repo.pk, request.user, [], process], daemon=True)
+        user_token = security.get_user_token(request.user, request.data["password"])
+
+        t = threading.Thread(target=gitlab_helper.update_repository, args=[repo.pk, request.user, [], user_token, process], daemon=True)
         t.start()
         return JsonResponse({
             "id": process.pk,
             "hash": process.hash
         })
+
+
+class ManageGroupInvitationsView(views.APIView):
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        invitations = ProjectGroupInvitation.objects.filter(project_group=project_group).all()
+        identifiers = [x.identifier for x in invitations]
+        return JsonResponse(constants.successful_data_json("Invitations fetched successfully", {"identifiers": identifiers}))
+
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        identifier = request.data["identifier"]
+        if ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=identifier).count() > 0:
+            return JsonResponse(constants.successful_empty_json("Invitation for that user already exists. Did not create a new one."))
+        ProjectGroupInvitation.objects.create(project_group=project_group, identifier=identifier)
+        return JsonResponse(constants.successful_empty_json("Invitation created successfully."))
+
+    def delete(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=request.data["identifier"]).delete()
+        return JsonResponse(constants.successful_empty_json("Invitation successfully deleted"))
+
+
+class ProfileInvitationView(views.APIView):
+    def get(self, request):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        invitations = ProjectGroupInvitation.objects.filter(identifier=request.user.profile.identifier).filter(has_been_declined=False).all()
+        groups = [ProjectGroupSerializer(x.project_group).data for x in invitations]
+        return JsonResponse(constants.successful_data_json("Successfully got invitations for user.", {"invitations": groups}))
+
+
+class AcceptGroupInvitationView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        invitations = ProjectGroupInvitation.objects.filter(project_group=project_group).filter(identifier=request.user.profile.identifier)
+        if invitations.count() == 0:
+            return JsonResponse(constants.error_json("This user does not have invitation for that group."), status=403)
+        if request.data["accept"]:
+            UserProjectGroup.objects.create(rights="B", account=request.user, project_group=project_group)
+            invitations.delete()
+            return JsonResponse(constants.successful_empty_json("Added user to project group"))
+        invitation = invitations.first()
+        invitation.has_been_declined = True
+        invitation.save()
+        return JsonResponse(constants.successful_empty_json("Successfully declined invitation"))
+
+
+class ProjectGroupUsersView(views.APIView):
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        user_project_groups = UserProjectGroup.objects.filter(project_group=project_group).all()
+        by_user = {}
+        by_role = {role: [] for role in UserProjectGroup.role_hierarchy}
+        for user_project_group in user_project_groups:
+            account = user_project_group.account
+            by_role[user_project_group.rights].append({"username": account.username, "id": account.pk})
+            if (account.pk, account.username) not in by_user.keys():
+                by_user[(account.pk, account.username)] = []
+            by_user[(account.pk, account.username)].append(user_project_group.rights)
+        by_role = [{"role": role, "users": users} for role, users in by_role.items()]
+        by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
+        return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
+
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        if not security.user_has_access_to_project_group_with_security_level_at_least(project_group, request.user, request.data["role"]):
+            return JsonResponse(constants.error_json("You are trying to assign a higher level role than you have yourself"))
+        target_account = User.objects.filter(pk=request.data["id"]).first()
+        current_roles = UserProjectGroup.objects.filter(project_group=project_group).filter(account=target_account)
+        if current_roles.count() == 0:
+            return JsonResponse(constants.error_json("Tou are trying to give a role to a user who is not in this project group."))
+        UserProjectGroup.objects.create(account=target_account, project_group=project_group, rights=request.data["role"])
+        return JsonResponse(constants.successful_empty_json("Successfully added user to new role"))
+
+    def delete(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project_group = ProjectGroup.objects.filter(pk=id).first()
+        if request.data["id"] == request.user.pk:
+            UserProjectGroup.objects.filter(account=request.user).filter(project_group=project_group).filter(rights=request.data["role"]).delete()
+            return JsonResponse(constants.successful_empty_json("Successfully removed role"))
+        if not security.user_has_access_to_project_group_with_security_level(request.user, project_group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        if not security.user_has_access_to_project_group_with_security_level_more_than(project_group, request.user, request.data["role"]):
+            return JsonResponse(constants.error_json("You are trying to remove a role equal to or higher than yours"))
+        target_user = User.objects.filter(pk=request.data["id"]).first()
+        UserProjectGroup.objects.filter(account=target_user).filter(project_group=project_group).filter(rights=request.data["role"]).delete()
+        return JsonResponse(constants.successful_empty_json("Successfully removed role from user"))
+
+
+class ProjectUsersView(views.APIView):
+    def get(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_with_security_level(request.user, project, ["A", "O", "M", "T"]):
+            return JsonResponse(constants.no_access_json)
+        user_projects = UserProject.objects.filter(project=project).all()
+        by_user = {}
+        by_role = {role: [] for role in UserProject.role_hierarchy}
+        for user_project in user_projects:
+            account = user_project.account
+            by_role[user_project.rights].append({"username": account.username, "id": account.pk})
+            if (account.pk, account.username) not in by_user.keys():
+                by_user[(account.pk, account.username)] = []
+            by_user[(account.pk, account.username)].append(user_project.rights)
+        by_role = [{"role": role, "users": users} for role, users in by_role.items()]
+        by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
+        return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
+
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        project_group = project.project_group
+        user = User.objects.filter(pk=request.data["id"]).first()
+        if UserProjectGroup.objects.filter(account=user).filter(project_group=project_group).count() == 0:
+            return JsonResponse(constants.error_json("That user is not in the correct project group"))
+        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
+        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
+        all_rights = list(user_roles_project) + list(user_roles_project_group)
+        max_rights = max([UserProject.role_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
+        target_rights = UserProject.role_hierarchy.index(request.data["rights"])
+        if target_rights > max_rights:
+            return JsonResponse(constants.error_json("You do not have a high enough role to assign that role"))
+        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, colour=helpers.random_colour())
+        return JsonResponse(constants.successful_empty_json("Successfully added user to project"))
+
+    def delete(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        project = Project.objects.filter(pk=id).first()
+        if request.data["id"] == request.user.pk:
+            UserProject.objects.filter(account=request.user).filter(project=project).filter(rights=request.data["role"]).delete()
+            return JsonResponse(constants.successful_empty_json("Successfully removed role"))
+        if not security.user_has_access_to_project_with_security_level(request.user, project, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+
+        project_group = project.project_group
+        user_roles_project = UserProject.objects.filter(project=project).filter(account=request.user).all()
+        user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
+        all_rights = list(user_roles_project) + list(user_roles_project_group)
+        max_rights = max([UserProject.role_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
+        target_rights = UserProject.role_hierarchy.index(request.data["rights"])
+        if target_rights >= max_rights:
+            return JsonResponse(constants.error_json("You do not have a high enough role to remove that role"))
+        user = User.objects.filter(pk=request.data["id"]).first()
+        UserProject.objects.filter(project=project).filter(account=user).delete()
+        return JsonResponse(constants.successful_empty_json("Successfully removed user to project"))
+
+
+class AssessmentCsvView(views.APIView):
+    def post(self, request, id):
+        if request.user.is_anonymous:
+            return JsonResponse(constants.anonymous_json)
+        group = ProjectGroup.objects.filter(pk=id).first()
+        if not security.user_has_access_to_project_group_with_security_level(request.user, group, ["O", "A"]):
+            return JsonResponse(constants.no_access_json)
+        assessments = []
+        for assessment_id in request.data["assessments"]:
+            assessment_category = AssessmentCategory.objects.filter(pk=assessment_id).first()
+            if assessment_category is None:
+                return JsonResponse(constants.error_json(f"Assessment category with id {assessment_id} not found from this project group."))
+            assessment_group = model_traversal.get_project_group_of_assessment_category(assessment_category)
+            if group != assessment_group:
+                return JsonResponse(constants.error_json(f"Assessment category with id {assessment_id} not found from this project group."))
+            assessments.append(assessment_category)
+        response = HttpResponse(
+            content_type='text/csv',
+            headers={'Content-Disposition': 'attachment; filename="assessment_data.csv"'},
+        )
+        writer = csv.writer(response)
+        writer.writerow(["project", "developer"] + [str(x.pk) + ": " + x.name for x in assessments])
+        for project in Project.objects.filter(project_group=group).all():
+            for developer in UserProject.objects.filter(project=project).filter(disabled=False).filter(rights="M").all():
+                row = [project.name, developer.account.username]
+                for assessment in assessments:
+                    if assessment.project_assessment:
+                        assessment_instances = ProjectAssessment.objects.filter(project=project).filter(assessment_category=assessment).all()
+                    else:
+                        assessment_instances = UserAssessment.objects.filter(user_project=developer).filter(assessment_category=assessment).all()
+                    assessment_types = [x.assessment_type for x in assessment_instances]
+                    indexes = [UserAssessment.assessment_instance_hierarchy.index(x) for x in assessment_types]
+                    target_index = indexes.index(max(indexes))
+                    highest_priority_assessment = assessment_instances[target_index]
+                    row.append(highest_priority_assessment.amount)
+                    # print(f"Options were {assessment_types} and chose {highest_priority_assessment.assessment_type}")
+                writer.writerow([str(x) for x in row])
+        return response

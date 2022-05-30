@@ -5,17 +5,23 @@ from .views import ProjectGroupView, ProfileView, ProjectGroupLoadProjectsView, 
     AssessmentCategoryView, ProjectGroupAssessmentView, ProjectAssessmentsView, AssessUserView, RepositoryUpdateView, \
     ProjectGroupUpdateView, ProjectMilestoneDataView, ProjectMilestoneTimeSpentView, BulkAssessView, FeedbackView, \
     GroupSummaryMilestoneDataView, ProjectMilestoneConnectionsView, MilestoneSetAssessmentMilestoneView, TestLoginView, \
-    ProcessInfoView, ProjectAddUserView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
-    ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, AssessmentCategoryCopyView
+    ProcessInfoView, AssessmentCategoryRecalculateView, ParametricTimeSpentView, ChangeDevColourView, \
+    ProjectRepoConnectionView, RepoSetProjectView, AddNewProject, AddNewRepo, AssessmentCategoryCopyView, \
+    ManageGroupInvitationsView, ProfileInvitationView, AcceptGroupInvitationView, ProjectGroupUsersView, \
+    ProjectUsersView, AssessmentCsvView
 
 router = routers.DefaultRouter()
 
 urlpatterns = [
     path("groups/<int:id>/", ProjectsView.as_view(), name="projects"),
+    path("groups/<int:id>/users/", ProjectGroupUsersView.as_view(), name="project_group_users"),
     path("groups/<int:id>/project/", AddNewProject.as_view(), name="add_new_project"),
     path("groups/<int:id>/project_repo_connections/", ProjectRepoConnectionView.as_view(), name="project_repo_connections"),
     path("groups/<int:id>/assessment/", ProjectGroupAssessmentView.as_view(), name="assessment_system"),
     path("groups/<int:id>/milestone/<int:milestone_id>/", GroupSummaryMilestoneDataView.as_view(), name="group_summary_project_milestone_data"),
+    path("groups/<int:id>/invitations/", ManageGroupInvitationsView.as_view(), name="invite_user_to_project_group"),
+    path("groups/<int:id>/accept_invitation/", AcceptGroupInvitationView.as_view(), name="accept_group_invitation"),
+    path("groups/<int:id>/assessment_csv/", AssessmentCsvView.as_view(), name="get_assessment_csv"),
 
     path("assessment_category/<int:id>/", AssessmentCategoryView.as_view(), name="assessment_categories"),
     path("assessment_category/<int:id>/copy/", AssessmentCategoryCopyView.as_view(), name="copy_assessment_category"),
@@ -30,7 +36,7 @@ urlpatterns = [
     path("projects/<int:id>/time_spent/", ParametricTimeSpentView.as_view(), name="parametric_time_spent"),
 
     path("projects/<int:id>/change_dev_colour/", ChangeDevColourView.as_view(), name="change_dev_colour"),
-    path("projects/<int:id>/add_user/", ProjectAddUserView.as_view(), name="add_user_to_project"),
+    path("projects/<int:id>/users/", ProjectUsersView.as_view(), name="project_users"),
     path("projects/<int:id>/repo/", AddNewRepo.as_view(), name="add_new_repo"),
     path("repos/<int:id>/project/", RepoSetProjectView.as_view(), name="set_project_for_repo"),
     path("projects/<int:id>/milestone_connections/", ProjectMilestoneConnectionsView.as_view(), name="project_milestone_connections"),
@@ -43,6 +49,7 @@ urlpatterns = [
 
     path("groups/", ProjectGroupView.as_view(), name="groups"),
     path("profile/", ProfileView.as_view(), name="profile"),
+    path("invitations/", ProfileInvitationView.as_view(), name="invitations"),
 
     path("process/<int:id>/<str:hash>/", ProcessInfoView.as_view(), name="get_process_info"),
     path("feedback/", FeedbackView.as_view(), name="feedback"),
