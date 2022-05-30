@@ -864,7 +864,7 @@ class ProjectUsersView(views.APIView):
             by_role[user_project.rights].append({"username": account.username, "id": account.pk, "colour": user_project.colour})
             if (account.pk, account.username) not in by_user.keys():
                 by_user[(account.pk, account.username)] = []
-            by_user[(account.pk, account.username)].append((user_project.rights, user_project.colour))
+            by_user[(account.pk, account.username)].append({"role": user_project.rights, "colour": user_project.colour})
         by_role = [{"role": role, "users": users} for role, users in by_role.items()]
         by_user = [{"account": {"id": user[0], "username": user[1]}, "roles": roles} for user, roles in by_user.items()]
         return JsonResponse(constants.successful_data_json("Successfully fetched roles for project group", {"by_user": by_user, "by_role": by_role}))
