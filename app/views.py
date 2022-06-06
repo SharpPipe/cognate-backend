@@ -37,7 +37,7 @@ class ProjectGroupView(views.APIView):
         serializer = ProjectGroupSerializer(queryset, many=True)
         data = serializer.data
         for point in data:
-            point["rights"] = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=point["id"]).all()]
+            point["role"] = [conn.rights for conn in UserProjectGroup.objects.filter(account=request.user).filter(project_group=point["id"]).all()]
         return JsonResponse(data, safe=False)
 
     def post(self, request):
@@ -139,7 +139,7 @@ class ProjectsView(views.APIView):
             dat["users"] = devs
             dat["milestones"] = milestones
             data.append(dat)
-        return JsonResponse({"data": data, "rights": rights, "active_milestones": len(assessment_milestones), "total_milestones": 7, "warnings": json_warnings}, safe=False)
+        return JsonResponse({"data": data, "role": rights, "active_milestones": len(assessment_milestones), "total_milestones": 7, "warnings": json_warnings}, safe=False)
 
     def put(self, request, id):
         if request.user.is_anonymous:
@@ -881,10 +881,10 @@ class ProjectUsersView(views.APIView):
         user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
         all_rights = list(user_roles_project) + list(user_roles_project_group)
         max_rights = max([UserProject.role_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
-        target_rights = UserProject.role_hierarchy.index(request.data["rights"])
+        target_rights = UserProject.role_hierarchy.index(request.data["role"])
         if target_rights > max_rights:
             return JsonResponse(constants.error_json("You do not have a high enough role to assign that role"))
-        UserProject.objects.create(rights=request.data["rights"], account=user, project=project, colour=helpers.random_colour())
+        UserProject.objects.create(rights=request.data["role"], account=user, project=project, colour=helpers.random_colour())
         return JsonResponse(constants.successful_empty_json("Successfully added user to project"))
 
     def delete(self, request, id):
@@ -902,7 +902,7 @@ class ProjectUsersView(views.APIView):
         user_roles_project_group = UserProjectGroup.objects.filter(project_group=project_group).filter(account=request.user).all()
         all_rights = list(user_roles_project) + list(user_roles_project_group)
         max_rights = max([UserProject.role_hierarchy.index(x.rights) for x in all_rights]) if len(all_rights) > 0 else -1
-        target_rights = UserProject.role_hierarchy.index(request.data["rights"])
+        target_rights = UserProject.role_hierarchy.index(request.data["role"])
         if target_rights >= max_rights:
             return JsonResponse(constants.error_json("You do not have a high enough role to remove that role"))
         user = User.objects.filter(pk=request.data["id"]).first()
