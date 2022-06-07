@@ -11,21 +11,34 @@ from .serializers import RegisterSerializer, ProjectGroupSerializer
 from . import assessment_tree
 from . import helpers
 
+import environ
+env = environ.Env()
 
-def get_token(repo, user, user_token):
-    if repo.project.project_group.gitlab_token is not None:
-        return repo.project.project_group.gitlab_token
-    return user_token
+
+def get_tokens(repo, user, user_token):
+    tokens = [
+        repo.project.project_group.gitlab_token,
+        user_token,
+        env("GITLAB_TOKEN")
+    ]
+    return [token for token in tokens if token is not None]
 
 
 def get_members_from_repo(repo, user, get_all, user_token):
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
     endpoint_part = f"/projects/{repo.gitlab_id}/members" + ("/all" if get_all else "")
-    token_part = f"?private_token={get_token(repo, user, user_token)}"
-    print(token_part)
-    answer = requests.get(base_url + api_part + endpoint_part + token_part)
-    return answer.json()
+    tokens = get_tokens(repo, user, user_token)
+    errors = []
+    for token in tokens:
+        token_part = f"?private_token={token}"
+        answer = requests.get(base_url + api_part + endpoint_part + token_part)
+        json_form = answer.json()
+        if "message" in json_form.keys() and json_form["message"] == "401 Unauthorized":
+            errors.append(json_form)
+            continue
+        return json_form, token
+    return errors, None
 
 
 def create_user(username, user_objects):
@@ -127,13 +140,13 @@ def update_repository(id, user, new_users, user_token, process=None):
     assessment_category_root = project.project_group.assessment_calculation.assessment_category
     base_url = "https://gitlab.cs.ttu.ee"
     api_part = "/api/v4"
-    token_part = f"?private_token={get_token(repo, user, user_token)}&per_page=100"
 
     times = []
 
     # Refresh users
     times.append(time.time())  # 0
-    answer_json = get_members_from_repo(repo, user, False, user_token)
+    answer_json, token = get_members_from_repo(repo, user, False, user_token)
+    token_part = f"?private_token={token}&per_page=100"
     if process is not None: update_process(process, 1, 10)
     user_objects = []
     if not isinstance(answer_json, list):
