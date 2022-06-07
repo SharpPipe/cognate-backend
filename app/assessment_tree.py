@@ -215,6 +215,9 @@ def recalculate_project_assessment(assessment_category, project):
         elif automation.automation_type == "CM":
             unique_commit_message_ratio = get_unique_commit_message_ratio_for_project_in_milestone(project, assessment_milestone)
             amount = decimal.Decimal(unique_commit_message_ratio) * assessment_category.total
+        elif automation.automation_type == "CW":
+            average_word_count = get_average_word_count_in_commit_messages_for_project_in_milestone(project, assessment_milestone)
+            amount = decimal.Decimal(min(1, average_word_count / automation.amount_needed)) * assessment_category.total
         give_automated_project_assessment(amount, assessment_category, project, user_assessment)
 
 
@@ -255,6 +258,9 @@ def recalculate_user_assessment(assessment_category, user_project):
         elif automation.automation_type == "CM":
             unique_commit_message_ratio = get_unique_commit_message_ratio_for_user_in_milestone(user_project, assessment_milestone)
             amount = decimal.Decimal(unique_commit_message_ratio) * assessment_category.total
+        elif automation.automation_type == "CW":
+            average_word_count = get_average_word_count_in_commit_messages_for_user_in_milestone(user_project, assessment_milestone)
+            amount = decimal.Decimal(min(1, average_word_count / automation.amount_needed)) * assessment_category.total
         give_automated_assessment(amount, assessment_category, user_project, user_assessment)
 
 
@@ -295,21 +301,43 @@ def get_lines_added_for_project_in_milestone(project, assessment_milestone):
     return sum([get_lines_added_for_user_in_milestone(user_project, assessment_milestone) for user_project in UserProject.objects.filter(project=project).filter(disabled=False).all()])
 
 
+def get_commits_in_project_in_milestone(project, assessment_milestone):
+    return Commit.objects.filter(repository__project=project).filter(time__range=[assessment_milestone.start, assessment_milestone.end]).all()
+
+
+def get_commits_in_user_project_in_milestone(user_project, assessment_milestone):
+    return Commit.objects\
+        .filter(repository__project=user_project.project)\
+        .filter(time__range=[assessment_milestone.start, assessment_milestone.end])\
+        .filter(author__account=user_project.account).all()
+
+
 def get_unique_commit_message_ratio_for_project_in_milestone(project, assessment_milestone):
-    commits = Commit.objects.filter(repository__project=project).filter(time__range=[assessment_milestone.start, assessment_milestone.end]).all()
+    commits = get_commits_in_project_in_milestone(project, assessment_milestone)
     commit_count = len(commits)
     unique_message_count = len(set([commit.message for commit in commits if commit.message is not None]))
     return unique_message_count / (commit_count if commit_count > 0 else 1)
 
 
 def get_unique_commit_message_ratio_for_user_in_milestone(user_project, assessment_milestone):
-    commits = Commit.objects\
-        .filter(repository__project=user_project.project)\
-        .filter(time__range=[assessment_milestone.start, assessment_milestone.end])\
-        .filter(author__account=user_project.account).all()
+    commits = get_commits_in_user_project_in_milestone(user_project, assessment_milestone)
     commit_count = len(commits)
     unique_message_count = len(set([commit.message for commit in commits if commit.message is not None]))
     return unique_message_count / (commit_count if commit_count > 0 else 1)
+
+
+def get_average_word_count_in_commit_messages_for_project_in_milestone(project, assessment_milestone):
+    commits = get_commits_in_project_in_milestone(project, assessment_milestone)
+    commit_count = len(commits)
+    word_count = sum([len(commit.message.split(" ")) if commit.message is not None else 0 for commit in commits])
+    return word_count / (commit_count if commit_count > 0 else 1)
+
+
+def get_average_word_count_in_commit_messages_for_user_in_milestone(user_project, assessment_milestone):
+    commits = get_commits_in_user_project_in_milestone(user_project, assessment_milestone)
+    commit_count = len(commits)
+    word_count = sum([len(commit.message.split(" ")) if commit.message is not None else 0 for commit in commits])
+    return word_count / (commit_count if commit_count > 0 else 1)
 
 
 def get_lines_added_for_user_in_milestone(user_project, assessment_milestone):
