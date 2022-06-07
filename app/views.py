@@ -261,7 +261,7 @@ class AssessmentCategoryView(views.APIView):
                 milestone_order_id=amount + 1
             )
         if assessment_category.assessment_type == "A":
-            if request.data["automation_type"] in ["L", "T", "CW"]:
+            if request.data["automation_type"] in ["L", "T", "CW", "CA"]:
                 AutomateAssessment.objects.create(automation_type=request.data["automation_type"], amount_needed=request.data["amount_needed"], assessment_category=assessment_category)
             elif request.data["automation_type"] in ["R", "CM"]:
                 AutomateAssessment.objects.create(automation_type=request.data["automation_type"], amount_needed=0, assessment_category=assessment_category)
