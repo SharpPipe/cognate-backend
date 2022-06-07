@@ -92,7 +92,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 continue
             project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
-            members = [member["username"] for member in gitlab_helper.get_members_from_repo(repo, request.user, True)]
+            members = [member["username"] for member in gitlab_helper.get_members_from_repo(repo, request.user, True, security.get_user_token(request.user, request.data["password"]))[0]]
             for user in User.objects.filter(username__in=members).all():
                 rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
