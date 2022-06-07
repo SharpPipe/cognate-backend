@@ -67,7 +67,10 @@ def encrypt_token(user, password):
     user.profile.save()
 
 
-def get_user_token(user, password):
+def get_user_token(user, request_data):
+    if "password" not in request_data.keys():
+        return None
+    password = request_data["password"]
     if user.profile.gitlab_token is None:
         return None
     if not user.profile.gitlab_token_encrypted:

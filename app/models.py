@@ -131,8 +131,13 @@ class AutomateAssessment(models.Model):
         RANDOM = ("R", "Random")  # A random value between 0 and 1 is given
         TIME_SPENT = ("T", "Time spent")
         LINES_ADDED = ("L", "Lines added")  # Is actually the difference in lines, so added - removed
+        UNIQUE_COMMIT_MESSAGES = ("CM", "Unique commit messages")
+        WORD_COUNT_IN_COMMIT_MESSAGES = ("CW", "Average word count in commit messages")
+        WORD_COUNT_IN_ISSUE_DESCRIPTIONS = ("IW", "Average word count in issue descriptions")
+        ISSUE_AMOUNT = ("IA", "Issue amount")
+        COMMIT_AMOUNT = ("CA", "Commit amount")
 
-    automation_type = models.CharField(max_length=1, choices=AutomationType.choices, default=AutomationType.RANDOM)
+    automation_type = models.CharField(max_length=2, choices=AutomationType.choices, default=AutomationType.RANDOM)
     amount_needed = models.IntegerField()
     assessment_category = models.ForeignKey(AssessmentCategory, on_delete=models.CASCADE)
 
