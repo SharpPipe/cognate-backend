@@ -92,7 +92,7 @@ class ProjectGroupLoadProjectsView(views.APIView):
                 continue
             project_object = Project.objects.create(name=project["name_with_namespace"], project_group=group)
             repo = Repository.objects.create(url=project["web_url"], gitlab_id=project["id"], name=project["name"], project=project_object)
-            members = [member["username"] for member in gitlab_helper.get_members_from_repo(repo, request.user, True, security.get_user_token(request.user, request.data["password"]))[0]]
+            members = [member["username"] for member in gitlab_helper.get_members_from_repo(repo, request.user, True, security.get_user_token(request.user, request.data))[0]]
             for user in User.objects.filter(username__in=members).all():
                 rights_query = UserProjectGroup.objects.filter(account=user).filter(project_group=group)
                 if rights_query.count() > 0 and rights_query.first().rights in ["A", "O"]:
@@ -261,9 +261,9 @@ class AssessmentCategoryView(views.APIView):
                 milestone_order_id=amount + 1
             )
         if assessment_category.assessment_type == "A":
-            if request.data["automation_type"] in "LT":
+            if request.data["automation_type"] in ["L", "T", "CW", "CA", "IW", "IA"]:
                 AutomateAssessment.objects.create(automation_type=request.data["automation_type"], amount_needed=request.data["amount_needed"], assessment_category=assessment_category)
-            elif request.data["automation_type"] == "R":
+            elif request.data["automation_type"] in ["R", "CM"]:
                 AutomateAssessment.objects.create(automation_type=request.data["automation_type"], amount_needed=0, assessment_category=assessment_category)
         assessment_tree.recalculate_assessment_category(assessment_category)
         return JsonResponse(AssessmentCategorySerializer(assessment_category).data)
@@ -387,7 +387,7 @@ class RepositoryUpdateView(views.APIView):
             return JsonResponse(constants.anonymous_json)
         if not security.user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):
             return JsonResponse(constants.no_access_json)
-        user_token = security.get_user_token(request.user, request.data["password"])
+        user_token = security.get_user_token(request.user, request.data)
         repo = gitlab_helper.update_repository(id, request.user, [], user_token)
         return JsonResponse({200: "OK", "data": RepositorySerializer(repo).data})
 
@@ -402,7 +402,7 @@ class ProjectGroupUpdateView(views.APIView):
         user_token = None
         if "password" in request.data:
             security.encrypt_token(request.user, request.data["password"])
-            user_token = security.get_user_token(request.user, request.data["password"])
+            user_token = security.get_user_token(request.user, request.data)
         name = "project group update"
         hid = hashlib.sha256()
         [hid.update(str(x).encode()) for x in [name, id]]
@@ -728,7 +728,7 @@ class AddNewRepo(views.APIView):
         [h.update(str(x).encode()) for x in [time.time(), name, id, request.user.pk]]
         process = Process.objects.create(hash=h.hexdigest(), id_hash=hid.hexdigest(), type="SR", status="O", completion_percentage=0)
 
-        user_token = security.get_user_token(request.user, request.data["password"])
+        user_token = security.get_user_token(request.user, request.data)
 
         t = threading.Thread(target=gitlab_helper.update_repository, args=[repo.pk, request.user, [], user_token, process], daemon=True)
         t.start()

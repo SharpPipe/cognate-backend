@@ -34,7 +34,7 @@ def get_members_from_repo(repo, user, get_all, user_token):
         token_part = f"?private_token={token}"
         answer = requests.get(base_url + api_part + endpoint_part + token_part)
         json_form = answer.json()
-        if "message" in json_form.keys() and json_form["message"] == "401 Unauthorized":
+        if isinstance(json_form, dict):
             errors.append(json_form)
             continue
         return json_form, token
@@ -216,6 +216,7 @@ def update_repository(id, user, new_users, user_token, process=None):
     issues_to_refresh = []
     while True:
         answer = requests.get(base_url + api_part + endpoint_part + token_part + "&updated_after=" + repo.last_issue_sync.isoformat() + "&page=" + str(counter)).json()
+        # answer = requests.get(base_url + api_part + endpoint_part + token_part + "&page=" + str(counter)).json()
         issues += answer
         if len(answer) < 100:
             break
@@ -233,6 +234,7 @@ def update_repository(id, user, new_users, user_token, process=None):
         closed_by = issue["closed_by"]
         author = issue["author"]
         assignee = issue["assignee"]
+        description = issue["description"]
 
         issues_to_refresh.append((gitlab_iid, gitlab_id))
         issue_query = Issue.objects.filter(gitlab_id=gitlab_id)
@@ -255,6 +257,8 @@ def update_repository(id, user, new_users, user_token, process=None):
             issue_object.author = User.objects.filter(username=author["username"]).first()
         if assignee is not None:
             issue_object.assignee = User.objects.filter(username=assignee["username"]).first()
+        if description is not None:
+            issue_object.description = description
         issue_object.save()
     times.append(time.time())  # 9
 
