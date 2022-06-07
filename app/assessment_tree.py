@@ -221,6 +221,12 @@ def recalculate_project_assessment(assessment_category, project):
         elif automation.automation_type == "CA":
             commit_amount = get_commit_amount_for_project_in_milestone(project, assessment_milestone)
             amount = decimal.Decimal(min(1, commit_amount / automation.amount_needed)) * assessment_category.total
+        elif automation.automation_type == "IW":
+            word_amount = get_average_word_count_in_issue_description_for_project_in_milestone(project, assessment_milestone)
+            amount = decimal.Decimal(min(1, word_amount / automation.amount_needed)) * assessment_category.total
+        elif automation.automation_type == "IA":
+            issue_amount = get_issue_amount_for_project_in_milestone(project, assessment_milestone)
+            amount = decimal.Decimal(min(1, issue_amount / automation.amount_needed)) * assessment_category.total
         give_automated_project_assessment(amount, assessment_category, project, user_assessment)
 
 
@@ -267,6 +273,12 @@ def recalculate_user_assessment(assessment_category, user_project):
         elif automation.automation_type == "CA":
             commit_amount = get_commit_amount_for_user_in_milestone(user_project, assessment_milestone)
             amount = decimal.Decimal(min(1, commit_amount / automation.amount_needed)) * assessment_category.total
+        elif automation.automation_type == "IW":
+            word_amount = get_average_word_count_in_issue_description_for_user_in_milestone(user_project, assessment_milestone)
+            amount = decimal.Decimal(min(1, word_amount / automation.amount_needed)) * assessment_category.total
+        elif automation.automation_type == "IA":
+            issue_amount = get_issue_amount_for_user_in_milestone(user_project, assessment_milestone)
+            amount = decimal.Decimal(min(1, issue_amount / automation.amount_needed)) * assessment_category.total
         give_automated_assessment(amount, assessment_category, user_project, user_assessment)
 
 
@@ -295,6 +307,41 @@ def get_issue_data_for_user_in_milestone(user_project, assessment_milestone):
         .filter(timespent__user=user_project.account)\
         .filter(milestone__assessment_milestone=assessment_milestone).count()
     return data
+
+
+def get_issues_for_project_in_milestone(project, assessment_milestone):
+    return Issue.objects\
+        .filter(milestone__assessment_milestone=assessment_milestone)\
+        .filter(milestone__repository__project=project).all()
+
+
+def get_issues_for_user_in_milestone(user_project, assessment_milestone):
+    return Issue.objects \
+        .filter(milestone__assessment_milestone=assessment_milestone) \
+        .filter(author=user_project.account) \
+        .filter(milestone__repository__project=user_project.project).all()
+
+
+def get_average_word_count_in_issue_description_for_project_in_milestone(project, assessment_milestone):
+    issues = get_issues_for_project_in_milestone(project, assessment_milestone)
+    issue_count = len(issues)
+    word_count = sum([len(issue.description.split(" ")) if issue.description is not None else 0 for issue in issues])
+    return word_count / (issue_count if issue_count > 0 else 1)
+
+
+def get_average_word_count_in_issue_description_for_user_in_milestone(user_project, assessment_milestone):
+    issues = get_issues_for_user_in_milestone(user_project, assessment_milestone)
+    issue_count = len(issues)
+    word_count = sum([len(issue.description.split(" ")) if issue.description is not None else 0 for issue in issues])
+    return word_count / (issue_count if issue_count > 0 else 1)
+
+
+def get_issue_amount_for_project_in_milestone(project, assessment_milestone):
+    return len(get_issues_for_project_in_milestone(project, assessment_milestone))
+
+
+def get_issue_amount_for_user_in_milestone(user_project, assessment_milestone):
+    return len(get_issues_for_user_in_milestone(user_project, assessment_milestone))
 
 
 def get_time_spent_for_user_in_milestone(user_project, assessment_milestone):
