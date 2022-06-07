@@ -382,7 +382,7 @@ class AssessUserView(views.APIView):
 
 
 class RepositoryUpdateView(views.APIView):
-    def get(self, request, id):
+    def post(self, request, id):
         if request.user.is_anonymous:
             return JsonResponse(constants.anonymous_json)
         if not security.user_has_access_to_project(request.user, Repository.objects.filter(pk=id).first().project):

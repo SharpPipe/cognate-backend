@@ -10,3 +10,4 @@ pyparsing>=3.0.7
 pydot>=1.4.2
 django-sslserver==0.22
 cryptography==37.0.2
+django-environ==0.8.1

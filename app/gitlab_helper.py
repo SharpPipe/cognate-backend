@@ -11,8 +11,12 @@ from .serializers import RegisterSerializer, ProjectGroupSerializer
 from . import assessment_tree
 from . import helpers
 
+import environ
+env = environ.Env()
+
 
 def get_token(repo, user, user_token):
+    print(env("GITLAB_TOKEN"))
     if repo.project.project_group.gitlab_token is not None:
         return repo.project.project_group.gitlab_token
     return user_token
