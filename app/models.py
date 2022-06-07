@@ -164,6 +164,7 @@ class Issue(models.Model):
     closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_closed", null=True, blank=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_authored", null=True, blank=True)
     assignee = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="issues_assigned", null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
 
 
 class TimeSpent(models.Model):
